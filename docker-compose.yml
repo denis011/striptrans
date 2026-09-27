@@ -1,0 +1,61 @@
+name: striptrans
+
+x-backend: &backend
+  build: ./backend
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    DATA_DIR: /data
+    DATABASE_URL: sqlite:////data/striptrans.db
+  volumes:
+    - ./backend:/app
+    - data:/data
+    - ./tests/data:/testdata:ro
+    - ./models:/models:ro
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *backend
+    command: uvicorn --factory app.main:create_app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/ping', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  worker:
+    <<: *backend
+    # api pravi tabele pri startu, pa worker čeka da api bude spreman
+    command: watchfiles --filter python "python -m worker.main" app worker
+    depends_on:
+      api:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    environment:
+      VITE_API_PROXY: http://api:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  e2e:
+    build: ./e2e
+    profiles: ["e2e"]
+    environment:
+      BASE_URL: http://frontend:5173
+    depends_on:
+      frontend:
+        condition: service_started
+
+volumes:
+  data:

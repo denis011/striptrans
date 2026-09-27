@@ -1,0 +1,22 @@
+[project]
+name = "striptrans-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# tabele izveštaja su dugački redovi po prirodi
+"tools/benchmark.py" = ["E501"]
+"tools/benchmark_translation.py" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-p no:cacheprovider -m 'not integration'"
+markers = ["integration: sporiji testovi na pravim stripovima iz /testdata"]

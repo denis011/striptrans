@@ -1,0 +1,23 @@
+# Razvojno okruženje (grana u ../striptrans-dev): drugi portovi i poseban volume sa kopijom podataka.
+# Uključuje ga .env razvojnog foldera (COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml), pa sve
+# `make` komande u tom folderu rade nad projektom striptrans-dev i ne diraju stabilno okruženje.
+name: striptrans-dev
+
+x-dev-backend: &dev-backend
+  volumes:
+    # modeli i test podaci su van git-a, pa se uzimaju iz stabilnog foldera
+    - ../striptrans/models:/models:ro
+    - ../striptrans/tests/data:/testdata:ro
+
+services:
+  api:
+    <<: *dev-backend
+    ports: !override
+      - "8001:8000"
+  worker:
+    <<: *dev-backend
+  frontend:
+    environment:
+      VITE_APP_ENV: DEV  # crveni okvir i natpis „DEV" na svakoj strani (App.tsx)
+    ports: !override
+      - "5174:5173"
