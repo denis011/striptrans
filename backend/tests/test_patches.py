@@ -110,3 +110,41 @@ def test_deleting_the_page_removes_the_patch_files(client, settings):
     client.delete(f"/api/pages/{page['id']}")
 
     assert not list(folder.iterdir())
+
+
+def alpha_at(client, patch, x, y) -> int:
+    with Image.open(io.BytesIO(client.get(patch["url"]).content)) as image:
+        return image.convert("RGBA").getpixel((x, y))[3]
+
+
+def brush(client, patch, mode, points, radius=5):
+    body = {"strokes": [{"mode": mode, "radius": radius, "points": points}]}
+    return client.post(f"/api/patches/{patch['id']}/mask", json=body)
+
+
+def test_brush_hides_and_shows_part_of_the_patch(client):
+    page = create_page(client)
+    # slika 40 × 30 razvučena na 80 × 60 stranice: potez u stranici je dvostruko manji u slici
+    patch = upload(client, page, x=100, y=100, width=80, height=60)
+
+    hidden = brush(client, patch, "hide", [[120, 120]]).json()
+
+    assert hidden["url"] != patch["url"]  # nova verzija slike
+    assert alpha_at(client, hidden, 10, 10) == 0  # (120, 120) stranice = (10, 10) slike
+    assert alpha_at(client, hidden, 35, 25) == 255
+    shown = brush(client, hidden, "show", [[120, 120]], radius=10).json()
+    assert alpha_at(client, shown, 10, 10) == 255
+
+
+def test_brush_follows_patch_rotation_and_undo_restores(client):
+    page = create_page(client)
+    patch = upload(client, page, x=200, y=200, width=40, height=30)
+    client.patch(f"/api/patches/{patch['id']}", json={"rotation": 90})
+    # zakrpa okrenuta 90° oko gornjeg levog ugla: piksel slike (5, 10) je na stranici (190, 205)
+    hidden = brush(client, patch, "hide", [[190, 205]], radius=2).json()
+    assert alpha_at(client, hidden, 5, 10) == 0
+    assert alpha_at(client, hidden, 30, 10) == 255
+
+    client.post(f"/api/pages/{page['id']}/undo")
+    [restored] = client.get(f"/api/pages/{page['id']}/patches").json()
+    assert restored["url"] == f"/api/patches/{patch['id']}/image"

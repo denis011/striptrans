@@ -1,5 +1,10 @@
+import sqlite3
+
+from sqlalchemy.exc import OperationalError
+
+import worker.main
 from app.models import Job, WorkerHeartbeat
-from worker.main import run_once
+from worker.main import run_once, run_once_safe
 
 
 def add_job(session_factory, **fields) -> int:
@@ -42,3 +47,11 @@ def test_running_jobs_are_not_claimed_again(session_factory, settings):
     add_job(session_factory, type="ping", status="running")
 
     assert run_once(session_factory, "w1", settings) is False
+
+
+def test_locked_database_does_not_stop_worker(session_factory, settings, monkeypatch):
+    def locked(*_):
+        raise OperationalError("UPDATE", {}, sqlite3.OperationalError("database is locked"))
+
+    monkeypatch.setattr(worker.main, "beat", locked)
+    assert run_once_safe(session_factory, "w1", settings) is False

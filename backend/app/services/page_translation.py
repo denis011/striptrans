@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import GlossaryEntry, Page, TextBlock, TranslationMemory
-from app.services import history
+from app.services import chains, history, sfx_glossary
 from app.services.glossary_suggest import flatten
 from app.services.translation import Pairs, SourceBlock, is_too_long, shorten, translate_blocks
 
@@ -66,46 +66,84 @@ def _apply(block: TextBlock, text: str, model: str, source: str) -> None:
     block.translation_too_long = is_too_long(source, text)
 
 
+def _chain_source(number: int, group: list[TextBlock]) -> SourceBlock:
+    """Lanac blokova kao jedan tekst za model, sa oznakom preloma između blokova."""
+    return SourceBlock(
+        number, group[0].kind, chains.join([flatten(b.text, emphasis=True) for b in group])
+    )
+
+
+def _apply_chain(
+    group: list[TextBlock],
+    text: str,
+    model: str,
+    statuses: set[str],
+    force: TextBlock | None = None,
+) -> int:
+    """Prevod lanca podeljen po blokovima; ručno izmenjeni i odobreni delovi ostaju."""
+    sources = [flatten(block.text, emphasis=True) for block in group]
+    applied = 0
+    for block, part, source in zip(group, chains.split(text, sources), sources, strict=True):
+        if part and (block.translation_status in statuses or block is force):
+            _apply(block, part, model, source)
+            applied += 1
+    return applied
+
+
 def translate_page(
     session: Session, page: Page, model: str, include_drafts: bool = True
 ) -> PageTranslation:
-    """Prevede blokove bez prevoda (i nacrte, ako treba); ručno izmenjene i odobrene ne dira."""
+    """Prevede blokove bez prevoda (i nacrte, ako treba); ručno izmenjene i odobrene ne dira.
+
+    Blokovi povezani u lanac (tekst prelomljen u kolone) idu modelu kao jedan tekst.
+    """
     statuses = {"none", "draft"} if include_drafts else {"none"}
-    todo = [b for b in _blocks(session, page.id) if b.translation_status in statuses]
+    groups = [
+        group
+        for group in chains.chains(_blocks(session, page.id))
+        if any(block.translation_status in statuses for block in group)
+    ]
     result = PageTranslation()
-    if not todo:
+    if not groups:
         return result
     history.record(session, page, "prevod stranice")
     series_id = page.project.series_id
     remembered = memory(session, series_id)
-    remaining = []
-    for block in todo:
+    sounds = sfx_glossary.load(session)
+    remaining: list[list[TextBlock]] = []
+    for group in groups:
+        block = group[0]
         source = flatten(block.text)
-        if source in remembered:
+        if len(group) > 1:
+            remaining.append(group)
+        elif block.kind == "sfx":  # onomatopeje: glosar i pravilo, bez modela
+            sfx_glossary.apply(block, sounds)
+            result.translated += 1
+        elif source in remembered:
             _apply(block, remembered[source], MEMORY_MODEL, source)
             result.from_memory += 1
         else:
-            remaining.append(block)
+            remaining.append(group)
     if remaining:
         glossary = glossary_pairs(session, series_id)
-        sources = [
-            SourceBlock(n, b.kind, flatten(b.text, emphasis=True))
-            for n, b in enumerate(remaining, start=1)
-        ]
+        sources = [_chain_source(n, group) for n, group in enumerate(remaining, start=1)]
         examples = list(remembered.items())[:EXAMPLES]
         context = previous_page_context(session, page)
         translations = translate_blocks(model, sources, glossary, context, examples)
-        for source, block in zip(sources, remaining, strict=True):
+        for source, group in zip(sources, remaining, strict=True):
             text = translations.get(source.number)
             if not text:
+                continue
+            if len(group) > 1:
+                result.translated += _apply_chain(group, text, model, statuses)
                 continue
             if is_too_long(source.text, text):
                 shorter = shorten(model, source, text, glossary)
                 if shorter and len(shorter) < len(text):
                     text = shorter
-            _apply(block, text, model, source.text)
+            _apply(group[0], text, model, source.text)
             result.translated += 1
-    result.too_long = sum(block.translation_too_long for block in todo)
+    result.too_long = sum(block.translation_too_long for group in groups for block in group)
     session.commit()
     return result
 
@@ -115,7 +153,24 @@ def translate_block(
 ) -> TextBlock:
     """Prevod jednog bloka (ili kraća verzija postojećeg prevoda); zamenjuje postojeći prevod."""
     page = block.page
+    group = chains.chain_of(block, _blocks(session, page.id)) if block.text.strip() else [block]
+    if block.kind == "sfx" and len(group) == 1:
+        sfx_glossary.apply(block, sfx_glossary.load(session))
+        session.commit()
+        return block
     series_id = page.project.series_id
+    if len(group) > 1 and not shorter:
+        # deo lanca: prevodi se ceo tekst, a menjaju se ovaj blok i delovi bez ručnih izmena
+        examples = list(memory(session, series_id).items())[:EXAMPLES]
+        context = previous_page_context(session, page)
+        glossary = glossary_pairs(session, series_id)
+        chain = _chain_source(1, group)
+        text = translate_blocks(model, [chain], glossary, context, examples).get(1)
+        if not text:
+            raise TranslationFailed("model nije vratio prevod")
+        _apply_chain(group, text, model, {"none", "draft"}, force=block)
+        session.commit()
+        return block
     source = SourceBlock(1, block.kind, flatten(block.text, emphasis=True))
     glossary = glossary_pairs(session, series_id)
     if shorter and block.translation:

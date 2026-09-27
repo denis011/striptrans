@@ -36,6 +36,7 @@ def test_style_is_saved_with_defaults_and_can_be_reset(client):
         "fill_box": False,
         "emphasis": False,
         "letter_fonts": {},
+        "cover": False,
     }
     other = client.patch(f"/api/blocks/{block['id']}", json={"translation": "zdravo"}).json()
     assert other["style"]["scale"] == 1.2  # druge izmene ne diraju stil

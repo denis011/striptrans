@@ -1,11 +1,12 @@
 from datetime import datetime
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 PageKind = Literal["original", "reference"]
 BlockKind = Literal["speech", "thought", "caption", "sfx", "other", "title"]
-GlossaryKind = Literal["name", "place", "phrase", "sfx"]
+GlossaryKind = Literal["name", "place", "phrase"]
 GlossaryStatus = Literal["suggested", "approved"]
 TranslationStatus = Literal["none", "draft", "edited", "approved"]
 
@@ -79,6 +80,16 @@ class MaskStroke(BaseModel):
 
 class MaskEdit(BaseModel):
     strokes: list[MaskStroke] = Field(min_length=1, max_length=100)
+
+
+class PatchStrokeIn(BaseModel):
+    mode: Literal["hide", "show"]  # hide: obriši deo zakrpe, show: vrati ga
+    radius: float = Field(gt=0, le=200)
+    points: list[tuple[float, float]] = Field(min_length=1, max_length=5000)
+
+
+class PatchMaskEdit(BaseModel):
+    strokes: list[PatchStrokeIn] = Field(min_length=1, max_length=100)
 
 
 class PageOrder(BaseModel):
@@ -186,6 +197,8 @@ class LetteringStyle(BaseModel):
     letters: dict[str, LetterStyle] = Field(default_factory=dict)  # po rednom broju slova prevoda
     # naslov: font za slova kojih nema u originalu, po slovu (K → „Anton"); bez njega bira se sam
     letter_fonts: dict[str, str] = Field(default_factory=dict)
+    # onomatopeja/natpis preko crteža: original se ne briše, nova slova ga prekriju debelim obrubom
+    cover: bool = False
     opaque: bool | None = None  # naslov: ispuna slova pokriva crtež; None = kao original (šuplja)
     # boja slova i obruba (naslovna, kolor strane); None = automatski: crno, belo na tamnoj podlozi
     color: str | None = Field(default=None, pattern=HEX_COLOR)
@@ -209,6 +222,7 @@ class BlockPatch(BaseModel):
     translation: str | None = None
     translation_status: TranslationStatus | None = None
     style: LetteringStyle | None = None  # null vraća automatsko slaganje
+    continues_id: int | None = None  # blok u kom se tekst nastavlja; null raskida vezu
 
 
 class BlockOut(BaseModel):
@@ -237,6 +251,7 @@ class BlockOut(BaseModel):
     angle: float | None = None
     dark_background: bool | None = None
     title: dict | None = None
+    continues_id: int | None = None
 
 
 class PatchOut(BaseModel):
@@ -253,11 +268,14 @@ class PatchOut(BaseModel):
     rotation: float
     opacity: float
     above_text: bool
+    mask_path: str | None = Field(default=None, exclude=True)
 
     @computed_field
     @property
     def url(self) -> str:
-        return f"/api/patches/{self.id}/image"
+        # svaka izmena maske je nov fajl: nova adresa, pa keš pregledača ne vraća staru sliku
+        version = f"?v={Path(self.mask_path).stem}" if self.mask_path else ""
+        return f"/api/patches/{self.id}/image{version}"
 
 
 class PatchPatch(BaseModel):
@@ -362,6 +380,9 @@ class BlockReviewOut(BaseModel):
     non_serbian: list[str] = []  # hrvatske i ijekavske reči (TISUĆU, TKO, UVIJEK)
     too_long: bool
     emphasis_missing: bool = False  # naglašene reči originala (`*…*`) nisu prenete u prevod
+    # onomatopeje [original, predlog] po pravilu ili produžene, koje čekaju potvrdu u glosaru
+    sfx_unconfirmed: list[tuple[str, str]] = []
+    maybe_continues: bool = False  # duga naracija bez kraja rečenice i bez veze sa nastavkom
 
 
 class PageReviewOut(BaseModel):
@@ -445,3 +466,34 @@ class PageReadiness(BaseModel):
 class PrepareRequest(BaseModel):
     ocr_model: str | None = None
     translation_model: str | None = None
+
+
+class SfxIn(BaseModel):
+    source: str = Field(min_length=1, max_length=200)
+    target: str = Field(min_length=1, max_length=200)
+    note: str | None = None
+
+
+class SfxPatch(BaseModel):
+    source: str | None = Field(default=None, min_length=1, max_length=200)
+    target: str | None = Field(default=None, min_length=1, max_length=200)
+    note: str | None = None
+
+
+class SfxOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    source: str
+    target: str
+    note: str | None
+
+
+class SfxMissing(BaseModel):
+    source: str
+    suggestion: str
+    count: int
+
+
+class SfxApplied(BaseModel):
+    changed: int

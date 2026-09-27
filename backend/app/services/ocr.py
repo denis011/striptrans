@@ -136,6 +136,25 @@ def postprocess(raw: str, kind: str) -> tuple[str, bool]:
     return uppercase_lettering(text), looped
 
 
+WORD = re.compile(r"[^\W\d_]{3,}")
+TRIPLE = re.compile(r"(.)\1\1")
+
+
+def not_a_sound(text: str) -> bool:
+    """Predlog onomatopeje je zapravo natpis: bar tri različite reči od 3+ slova, bez ponavljanja.
+
+    Onomatopeje ponavljaju reči (BANG BANG, KLOP-KLOP) ili slova (ZIIIP); naslovi, natpisi na
+    naslovnoj i pogrešno uhvaćene rečenice to ne rade.
+    """
+    words = [word.upper() for word in WORD.findall(text)]
+    if len(set(words)) < 3 or len(set(words)) < len(words):
+        return False
+    return not any(TRIPLE.search(word) for word in words)
+
+
+LONG_TEXT_FACTOR = 4  # dug tekst (naracija preko cele kolone) prekinut na max_tokens čita se ponovo
+
+
 def max_tokens_for(kind: str, max_tokens: int) -> int:
     return min(max_tokens, SFX_MAX_TOKENS) if kind == "sfx" else max_tokens
 
@@ -152,6 +171,10 @@ def read_block(
     started = time.monotonic()
     tokens = max_tokens_for(block.kind, max_tokens)
     result = client.generate(prompt_for(language), model, tokens, images=[crop], temperature=0)
+    if result.truncated and block.kind != "sfx":
+        # dug tekst, ne petlja: petlju posle skraćuje postprocess
+        tokens *= LONG_TEXT_FACTOR
+        result = client.generate(prompt_for(language), model, tokens, images=[crop], temperature=0)
     text, looped = postprocess(result.response, block.kind)
     return OcrResult(
         text=text,

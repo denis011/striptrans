@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { moveItem, positionForKey } from "./navigation";
+import { moveItem, nudgeForKey, positionForKey } from "./navigation";
 import { MAX_SCALE, fitView, screenRect, zoomAt } from "./zoom";
 
 const page = { width: 1801, height: 2457 };
@@ -94,5 +94,13 @@ describe("moveItem", () => {
   it("ne menja listu kad je cilj ista stavka", () => {
     const ids = [1, 2, 3];
     expect(moveItem(ids, 2, 2)).toBe(ids);
+  });
+});
+
+describe("nudgeForKey", () => {
+  it("strelice pomeraju za 1 px, sa Shift-om za 10 px", () => {
+    expect(nudgeForKey("ArrowLeft", false)).toEqual([-1, 0]);
+    expect(nudgeForKey("ArrowDown", true)).toEqual([0, 10]);
+    expect(nudgeForKey("PageDown", false)).toBeNull();
   });
 });

@@ -120,6 +120,8 @@ def delete_page(page_id: int, session: SessionDep, settings: SettingsDep) -> Res
         select(TextBlock.id).join(Page).where(Page.project_id == page.project_id)
     )
     title.sweep(Path(settings.data_dir), page.project_id, set(live))
-    kept = session.scalars(select(Patch.path).join(Page).where(Page.project_id == page.project_id))
-    patches.sweep(Path(settings.data_dir), page.project_id, set(kept))
+    kept = session.execute(
+        select(Patch.path, Patch.mask_path).join(Page).where(Page.project_id == page.project_id)
+    )
+    patches.sweep(Path(settings.data_dir), page.project_id, {p for row in kept for p in row if p})
     return Response(status_code=status.HTTP_204_NO_CONTENT)

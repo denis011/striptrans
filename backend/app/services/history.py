@@ -38,6 +38,7 @@ FIELDS = (
     "angle",
     "dark_background",
     "title",
+    "continues_id",
 )
 PATCH_FIELDS = (
     "position",
@@ -49,6 +50,7 @@ PATCH_FIELDS = (
     "rotation",
     "opacity",
     "above_text",
+    "mask_path",
 )
 
 
@@ -194,7 +196,7 @@ def _restore_patches(session: Session, page: Page, wanted: list[dict]) -> None:
             patch = Patch(id=entry["id"], page_id=page.id)
             session.add(patch)
         for field in PATCH_FIELDS:
-            setattr(patch, field, entry[field])
+            setattr(patch, field, entry.get(field))  # stariji koraci nemaju masku
     session.flush()
 
 
@@ -214,7 +216,13 @@ def _restore(session: Session, page: Page, blocks: list[dict], data_dir: Path | 
             block = TextBlock(id=entry["id"], page_id=page.id)
             session.add(block)
         for field in FIELDS:
-            setattr(block, field, entry[field])
+            if field != "continues_id":
+                setattr(block, field, entry[field])
+    session.flush()
+    for entry in blocks:  # veze tek kad svi blokovi postoje; stariji koraci istorije ih nemaju
+        existing.get(entry["id"], session.get(TextBlock, entry["id"])).continues_id = entry.get(
+            "continues_id"
+        )
     session.flush()
     if data_dir is not None:
         for block in session.scalars(select(TextBlock).where(TextBlock.page_id == page.id)):

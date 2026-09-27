@@ -7,7 +7,7 @@ from app.db import Base
 
 PAGE_KINDS = ("original", "reference")
 BLOCK_KINDS = ("speech", "thought", "caption", "sfx", "other", "title")
-GLOSSARY_KINDS = ("name", "place", "phrase", "sfx")
+GLOSSARY_KINDS = ("name", "place", "phrase")  # onomatopeje imaju svoj glosar
 
 
 def utcnow() -> datetime:
@@ -158,6 +158,11 @@ class TextBlock(Base):
     dark_background: Mapped[bool | None]
     # naslov (Faza 6a): slova isečena iz originala i dopunjena, opis iz app.services.title.describe
     title: Mapped[dict | None] = mapped_column(JSON)
+    # tekst se nastavlja u drugom bloku iste stranice (kolone uvodnika, prelomljen oblačić):
+    # lanac se prevodi u jednom komadu
+    continues_id: Mapped[int | None] = mapped_column(
+        ForeignKey("text_blocks.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
@@ -180,6 +185,9 @@ class Patch(Base):
     rotation: Mapped[float] = mapped_column(default=0.0)
     opacity: Mapped[float] = mapped_column(default=1.0)
     above_text: Mapped[bool] = mapped_column(default=False)  # crta se i preko složenog prevoda
+    # vidljivost piksela zakrpe (PNG „L" u veličini slike, 0 = obrisano četkicom);
+    # None = cela vidljiva. Svaka izmena je nov fajl, pa „Poništi" samo vraća putanju.
+    mask_path: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
@@ -202,6 +210,19 @@ class PageHistory(Base):
     patch: Mapped[dict | None] = mapped_column(JSON)
     patches: Mapped[list | None] = mapped_column(JSON)  # zakrpe stranice (Faza 6c)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class SfxEntry(Base):
+    """Glosar onomatopeja, zajednički za sve serijale; ključ su samo slova (WOAH! = WOAH)."""
+
+    __tablename__ = "sfx_glossary"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String(200), unique=True)
+    target: Mapped[str] = mapped_column(String(200))
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class TranslationMemory(Base):

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import {
+  applySfx,
   type PageKind,
   type ProjectProgress,
   cancelJob,
@@ -81,6 +82,7 @@ export default function ProjectPage() {
     mutationFn: () => translateProject(projectId, translationModel, replaceTranslations),
     onSuccess: refresh,
   });
+  const sfx = useMutation({ mutationFn: () => applySfx(projectId), onSuccess: refresh });
   const cleanAll = useMutation({ mutationFn: () => cleanProject(projectId), onSuccess: refresh });
   const reshape = useMutation({ mutationFn: () => reshapeProject(projectId), onSuccess: refresh });
   const prepareAll = useMutation({ mutationFn: () => prepareProject(projectId, processModel, translationModel), onSuccess: refresh });
@@ -214,6 +216,19 @@ export default function ProjectPage() {
             Prevedi ceo projekat
           </button>
           {translateAll.isError && <span className="error">{translateAll.error.message}</span>}
+          <button
+            type="button"
+            disabled={busy || progress.blocks === 0 || sfx.isPending}
+            onClick={() => sfx.mutate()}
+            title="Onomatopeje ponovo po glosaru onomatopeja; ručno izmenjene i odobrene ostaju"
+          >
+            Onomatopeje po glosaru
+          </button>
+          <Link className="button" to="/sfx-glossary">
+            Glosar onomatopeja
+          </Link>
+          {sfx.data && <span className="detail">izmenjeno onomatopeja: {sfx.data.changed}</span>}
+          {sfx.isError && <span className="error">{sfx.error.message}</span>}
         </Step>
         <Step number={5} title="Lektura" done={progress.pages > 0 && progress.proofread >= progress.pages}
           status={`${progress.proofread} od ${progress.pages} stranica lektorisano`}>

@@ -279,6 +279,8 @@ def clean_page(session: Session, settings: Settings, page: Page) -> CleanResult:
     for block in page.blocks:
         if block.kind == "title" or not needs_inpaint(block.kind, block.text, block.translation):
             continue
+        if (block.style or {}).get("cover"):
+            continue  # „Prekrij original": nova slova sa debelim obrubom prekrivaju stara
         box = (block.x, block.y, block.width, block.height)
         letters = artwork_mask(original_gray, probability, box, block.kind)
         cleaned = inpaint(cleaned, letters, settings.models_dir)

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import {
   type BlockChanges,
@@ -12,6 +12,7 @@ import {
   type Rect,
   type TextBlock,
   addDictionaryWord,
+  createSfx,
   addPatch,
   autoOrderBlocks,
   cancelJob,
@@ -22,6 +23,7 @@ import {
   deleteTitleGlyph,
   deleteBlock,
   editMask,
+  editPatchMask,
   duplicateBlock,
   getJob,
   getPageReview,
@@ -65,7 +67,8 @@ import PageCanvas, { type Fit } from "../components/PageCanvas";
 import { moveBlock, toggleSelection } from "../editor/blocks";
 import { importRanks } from "../pageOrder";
 import { loadSetting, saveSetting } from "../storage";
-import { positionForKey } from "../viewer/navigation";
+import { nudgeForKey, positionForKey } from "../viewer/navigation";
+import { patchAt } from "../viewer/patchHit";
 import type { FitMode } from "../viewer/zoom";
 
 const FIT_BUTTONS: [FitMode, string, string][] = [
@@ -75,6 +78,8 @@ const FIT_BUTTONS: [FitMode, string, string][] = [
 ];
 
 type Mode = "select" | "draw" | "brush" | "text" | "patch";
+
+const NUDGE_SAVE_DELAY = 400; // ms bez strelice pre čuvanja pomeraja
 
 const MODES = [
   { value: "select", label: "Izbor", short: "Izbor", Icon: MousePointer2 },
@@ -403,6 +408,13 @@ export default function ViewerPage() {
     mutationFn: (word: string) => addDictionaryWord(project.data?.series.id ?? 0, word),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["review"] }),
   });
+  const confirmSfx = useMutation({
+    mutationFn: ({ source, target }: { source: string; target: string }) => createSfx({ source, target }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["review"] });
+      queryClient.invalidateQueries({ queryKey: ["sfx-glossary"] });
+    },
+  });
   const flags = useMutation({
     mutationFn: (changes: { skip?: boolean; ocr_reviewed?: boolean; translation_reviewed?: boolean }) => updatePage(pageId, changes),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["project", projectId] }),
@@ -417,6 +429,17 @@ export default function ViewerPage() {
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       refreshBlocks(); // oblik oblačića se meri ponovo
     },
+  });
+  // četkica po zakrpi: izabrana zakrpa, inače najgornja na mestu gde potez počinje
+  const patchMaskMutation = useMutation({
+    mutationFn: (stroke: MaskStroke) => {
+      const [x, y] = stroke.points[0];
+      const target = selectedPatch ?? patchAt(patches, x, y);
+      if (!target) throw new Error("Potez nije počeo na zakrpi.");
+      const mode = stroke.mode === "patch-hide" ? "hide" : "show";
+      return editPatchMask(target.id, [{ mode, radius: stroke.radius, points: stroke.points }]);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: patchesKey }),
   });
   const cleanMutation = useMutation({
     mutationFn: () => cleanPage(pageId),
@@ -463,6 +486,49 @@ export default function ViewerPage() {
     const next = pending.find((block) => block.position > current.position);
     setSelectedIds(next ? [next.id] : []);
   });
+
+  // strelice pomeraju izabranu zakrpu ili blokove: odmah na ekranu, a na server (i u istoriju)
+  // jednom, kad se strelice puste na trenutak ili kad se pređe na drugu stranicu
+  const nudgeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nudged = useRef<{ patches: Map<number, Rect>; blocks: Map<number, Rect> }>({ patches: new Map(), blocks: new Map() });
+  const saveNudge = useEffectEvent(() => {
+    if (nudgeTimer.current) clearTimeout(nudgeTimer.current);
+    nudgeTimer.current = null;
+    const { patches: movedPatches, blocks: movedBlocks } = nudged.current;
+    nudged.current = { patches: new Map(), blocks: new Map() };
+    for (const [id, { x, y }] of movedPatches) changePatch({ id, changes: { x, y } });
+    for (const [id, { x, y }] of movedBlocks) changeBlock(id, { x, y });
+  });
+  const nudge = useEffectEvent((dx: number, dy: number): boolean => {
+    if (editPatches && selectedPatchId) {
+      const moved = queryClient
+        .setQueryData<Patch[]>(patchesKey, (old) =>
+          old?.map((item) => (item.id === selectedPatchId ? { ...item, x: item.x + dx, y: item.y + dy } : item)),
+        )
+        ?.find((item) => item.id === selectedPatchId);
+      if (moved) nudged.current.patches.set(moved.id, moved);
+    } else if (selectedIds.length > 0 && !editPatches && !drawMode && !brush) {
+      const limit = { width: page?.width ?? Infinity, height: page?.height ?? Infinity };
+      const updated = queryClient.setQueryData<TextBlock[]>(blocksKey, (old) =>
+        old?.map((block) =>
+          selectedIds.includes(block.id)
+            ? {
+                ...block,
+                x: Math.min(Math.max(0, block.x + dx), Math.max(0, limit.width - block.width)),
+                y: Math.min(Math.max(0, block.y + dy), Math.max(0, limit.height - block.height)),
+              }
+            : block,
+        ),
+      );
+      for (const block of updated ?? []) if (selectedIds.includes(block.id)) nudged.current.blocks.set(block.id, block);
+    } else {
+      return false;
+    }
+    if (nudgeTimer.current) clearTimeout(nudgeTimer.current);
+    nudgeTimer.current = setTimeout(saveNudge, NUDGE_SAVE_DELAY);
+    return true;
+  });
+  useEffect(() => () => saveNudge(), [pageId]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -524,6 +590,11 @@ export default function ViewerPage() {
       }
       if (event.key.toLowerCase() === "r" && !event.ctrlKey && !event.metaKey && !event.altKey) {
         if (selectedIds.length > 0) readBlocks(selectedIds);
+        return;
+      }
+      const delta = event.ctrlKey || event.metaKey || event.altKey ? null : nudgeForKey(event.key, event.shiftKey);
+      if (delta && nudge(delta[0], delta[1])) {
+        event.preventDefault();
         return;
       }
       const next = positionForKey(event.key, position, count);
@@ -711,6 +782,8 @@ export default function ViewerPage() {
               <option value="add">obriši tekst (belo)</option>
               <option value="inpaint">obriši preko crteža</option>
               <option value="erase">vrati original</option>
+              <option value="patch-hide">obriši zakrpu</option>
+              <option value="patch-show">vrati zakrpu</option>
             </select>
             <input
               type="range"
@@ -725,6 +798,7 @@ export default function ViewerPage() {
                 setBrushSettings(next);
               }}
             />
+            {patchMaskMutation.isError && <span className="error">{patchMaskMutation.error.message}</span>}
           </div>
         )}
         {editPatches && (
@@ -979,7 +1053,7 @@ export default function ViewerPage() {
             blockText={(id) => blocks.find((block) => block.id === id)?.translation ?? ""}
             onChangeText={(id, translation) => changeBlock(id, { translation })}
             brush={brush}
-            onBrushStroke={(stroke) => maskMutation.mutate(stroke)}
+            onBrushStroke={(stroke) => (stroke.mode.startsWith("patch-") ? patchMaskMutation.mutate(stroke) : maskMutation.mutate(stroke))}
             width={page.width}
             height={page.height}
             fit={fit}
@@ -1018,6 +1092,7 @@ export default function ViewerPage() {
             onTranslate={(id, shorter) => translate.mutate({ id, shorter })}
             reviews={reviews}
             onAddWord={(word) => addWord.mutate(word)}
+            onConfirmSfx={(source, target) => confirmSfx.mutate({ source, target })}
             onStyle={changeStyle}
             fonts={fontList}
             fits={overflows}
@@ -1036,8 +1111,10 @@ export default function ViewerPage() {
             to={`/projects/${projectId}/pages/${item.position}`}
             className={`${item.position === position ? "current" : ""}${item.translation_reviewed ? " reviewed" : ""}`}
             aria-label={`Stranica ${item.position}${item.translation_reviewed ? " (lektorisana)" : ""}`}
+            aria-current={item.position === position ? "page" : undefined}
           >
             <img src={pageThumbnailUrl(item.id)} alt="" loading="lazy" />
+            <span className="page-number">{item.position}</span>
           </Link>
         ))}
       </div>

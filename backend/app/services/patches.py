@@ -5,9 +5,13 @@ doteran u GIMP-u. Izvoz crta zakrpe istim redom kao editor, pa je pregled jednak
 """
 
 import io
+import math
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 
+import cv2
+import numpy as np
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -99,3 +103,57 @@ def sweep(data_dir: Path, project_id: int, keep: set[str]) -> None:
             and str(Path("projects", str(project_id), "patches", file.name)) not in keep
         ):
             file.unlink(missing_ok=True)
+
+
+@dataclass
+class PatchStroke:
+    mode: str  # hide (obriši zakrpu, vidi se ono ispod) | show (vrati zakrpu)
+    radius: float  # u pikselima stranice
+    points: list[tuple[float, float]]  # u pikselima stranice
+
+
+def to_patch(patch: Patch, size: tuple[int, int], x: float, y: float) -> tuple[float, float]:
+    """Tačka stranice u pikselima slike zakrpe (zakrpa je pomerena, uvećana i rotirana oko ugla)."""
+    angle = math.radians(patch.rotation or 0.0)
+    dx, dy = x - patch.x, y - patch.y
+    u = dx * math.cos(angle) + dy * math.sin(angle)
+    v = -dx * math.sin(angle) + dy * math.cos(angle)
+    return u * size[0] / patch.width, v * size[1] / patch.height
+
+
+def visibility(data_dir: Path, patch: Patch, size: tuple[int, int]) -> np.ndarray:
+    if patch.mask_path and (data_dir / patch.mask_path).exists():
+        with Image.open(data_dir / patch.mask_path) as mask:
+            return np.array(mask.convert("L").resize(size))
+    return np.full((size[1], size[0]), 255, dtype=np.uint8)
+
+
+def edit_mask(data_dir: Path, project_id: int, patch: Patch, strokes: list[PatchStroke]) -> None:
+    """Potezi četkice po zakrpi: „hide" briše deo zakrpe, „show" ga vraća; original slike ostaje."""
+    with Image.open(data_dir / patch.path) as image:
+        size = image.size
+    mask = visibility(data_dir, patch, size)
+    scale = (size[0] / patch.width + size[1] / patch.height) / 2
+    for stroke in strokes:
+        value = 0 if stroke.mode == "hide" else 255
+        radius = max(1, round(stroke.radius * scale))
+        points = [tuple(round(c) for c in to_patch(patch, size, x, y)) for x, y in stroke.points]
+        for start, end in zip(points, points[1:], strict=False):
+            cv2.line(mask, start, end, value, thickness=radius * 2)
+        for point in points:
+            cv2.circle(mask, point, radius, value, thickness=-1)
+    relative = Path("projects", str(project_id), "patches", f"mask-{uuid.uuid4().hex}.png")
+    Image.fromarray(mask).save(data_dir / relative, optimize=True)
+    patch.mask_path = str(relative)
+
+
+def masked_image(data_dir: Path, patch: Patch) -> bytes:
+    """Slika zakrpe sa obrisanim delovima kao providnim (za editor i izvoz)."""
+    with Image.open(data_dir / patch.path) as image:
+        rgba = image.convert("RGBA")
+    alpha = np.asarray(rgba.getchannel("A"), dtype=np.uint16)
+    visible = visibility(data_dir, patch, rgba.size).astype(np.uint16)
+    rgba.putalpha(Image.fromarray((alpha * visible // 255).astype(np.uint8)))
+    buffer = io.BytesIO()
+    rgba.save(buffer, "PNG")
+    return buffer.getvalue()

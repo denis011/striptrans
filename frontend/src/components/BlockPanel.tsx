@@ -31,6 +31,7 @@ interface Props {
   onTranslate: (id: number, shorter: boolean) => void;
   reviews?: Record<number, BlockReview>;
   onAddWord?: (word: string) => void;
+  onConfirmSfx?: (source: string, target: string) => void;
   onStyle?: (id: number, changes: Partial<LetteringStyle> | null) => void;
   fonts?: FontInfo[];
   fits?: Record<number, { line: number; extra: number } | null>; // blokovi čiji tekst ne staje
@@ -49,6 +50,7 @@ const SWATCHES = [
   { color: "#d7261e", name: "crvena" },
 ];
 const EDGE_STEP = 0.02; // debljina obruba, u veličinama slova
+const COVER_EDGE = 0.3; // „Prekrij original": obrub dovoljno debeo da sakrije stara slova ispod novih
 
 /** Boja slova i obruba bloka (naslovna, kolor strane); „A" vraća automatsku boju. */
 function ColorControls({ block, set }: { block: TextBlock; set: (changes: Partial<LetteringStyle>) => void }) {
@@ -86,8 +88,23 @@ function ColorControls({ block, set }: { block: TextBlock; set: (changes: Partia
       />
     </div>
   );
+  const coverable = block.kind === "sfx" || block.kind === "other";
   return (
     <div className="color-controls">
+      {coverable && (
+        <label
+          className="detail"
+          title="Original se ne briše (brisanje preko gustog crteža ume da bude ružno), već ga nova slova prekriju debelim obrubom boje papira. Važi posle „Očisti stranicu“; ostatke dočisti četkicom."
+        >
+          <input
+            type="checkbox"
+            aria-label={label("Prekrij original")}
+            checked={style.cover ?? false}
+            onChange={(event) => set({ cover: event.target.checked, outline_width: event.target.checked ? COVER_EDGE : null })}
+          />{" "}
+          Prekrij original (bez brisanja)
+        </label>
+      )}
       {row("color", "Boja")}
       {row("outline_color", "Obrub")}
       <div className="color-row">
@@ -400,15 +417,49 @@ function TitleControls({
   );
 }
 
-function Warnings({ review, onAddWord }: { review?: BlockReview; onAddWord?: (word: string) => void }) {
+function Warnings({
+  review,
+  onAddWord,
+  onConfirmSfx,
+}: {
+  review?: BlockReview;
+  onAddWord?: (word: string) => void;
+  onConfirmSfx?: (source: string, target: string) => void;
+}) {
   const foreign = review?.non_serbian ?? [];
+  const sounds = review?.sfx_unconfirmed ?? [];
   if (
     !review ||
-    (review.unknown.length === 0 && review.glossary_missing.length === 0 && foreign.length === 0 && !review.emphasis_missing)
+    (review.unknown.length === 0 &&
+      review.glossary_missing.length === 0 &&
+      foreign.length === 0 &&
+      !review.emphasis_missing &&
+      !review.maybe_continues &&
+      sounds.length === 0)
   )
     return null;
   return (
     <div className="warnings">
+      {review.maybe_continues && (
+        <span className="badge warning" title="Naracija se završava usred rečenice: ako se nastavlja u drugoj koloni, izaberi taj blok u „Nastavlja se u“, pa se prevodi u jednom komadu">
+          nastavlja se?
+        </span>
+      )}
+      {sounds.map(([source, target]) => (
+        <button
+          key={`sfx-${source}`}
+          type="button"
+          className="badge warning"
+          title="Nije u glosaru onomatopeja (predlog po pravilu ili produžen oblik) — klikni da potvrdiš i dodaš u glosar; drugi zapis upiši u prevod"
+          aria-label={`Potvrdi ${source} → ${target} u glosaru onomatopeja`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onConfirmSfx?.(source, target);
+          }}
+        >
+          {source} → {target} ✓
+        </button>
+      ))}
       {review.unknown.map((word) => (
         <button
           key={word}
@@ -516,6 +567,7 @@ export default function BlockPanel({
   onTranslate,
   reviews,
   onAddWord,
+  onConfirmSfx,
   onStyle,
   fonts = [],
   fits,
@@ -562,6 +614,13 @@ export default function BlockPanel({
                   </option>
                 ))}
               </select>
+              {blocks
+                .filter((other) => other.continues_id === block.id)
+                .map((other) => (
+                  <span key={`nastavak-${other.id}`} className="badge" title="Prevodi se zajedno sa prethodnim delom teksta">
+                    nastavak bloka {other.position}
+                  </span>
+                ))}
               {block.needs_review && <span className="badge">za proveru</span>}
               {readingIds.includes(block.id) && <span className="badge">čitam…</span>}
               <span className="block-actions">
@@ -604,7 +663,26 @@ export default function BlockPanel({
               </span>
             </div>
             <TranslationText key={`prevod:${block.id}:${block.translation}`} block={block} onSave={(translation) => onUpdate(block.id, { translation })} />
-            <Warnings review={reviews?.[block.id]} onAddWord={onAddWord} />
+            <Warnings review={reviews?.[block.id]} onAddWord={onAddWord} onConfirmSfx={onConfirmSfx} />
+            {(selected || block.continues_id) && (
+              <label className="continues" onClick={(event) => event.stopPropagation()}>
+                Nastavlja se u{" "}
+                <select
+                  aria-label={`Nastavak bloka ${block.position}`}
+                  value={block.continues_id ?? ""}
+                  onChange={(event) => onUpdate(block.id, { continues_id: event.target.value ? Number(event.target.value) : null })}
+                >
+                  <option value="">— (samostalan tekst)</option>
+                  {blocks
+                    .filter((other) => other.id !== block.id)
+                    .map((other) => (
+                      <option key={other.id} value={other.id}>
+                        {other.position}: {other.text.replace(/\s+/g, " ").slice(0, 30)}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            )}
             {selected && onStyle && block.kind === "title" && <TitleControls block={block} onStyle={onStyle} onCutTitle={onCutTitle} onSaveGlyph={onSaveGlyph} onDeleteGlyph={onDeleteGlyph} />}
             {selected && block.id in (fits ?? {}) && (
               <span className="warning">

@@ -18,8 +18,8 @@ if TYPE_CHECKING:
 PROMPT = """You compare an Italian comic book page with its published Serbian translation.
 Below are aligned balloon pairs (IT = Italian original, SR = Serbian edition).
 Extract glossary entries where the Serbian edition uses a specific translation or
-transliteration: character names, place names, recurring exclamations, curses or idioms,
-and sound effects. Only use items that actually occur in the pairs. Give names in their
+transliteration: character names, place names, recurring exclamations, curses or idioms
+(not sound effects). Only use items that actually occur in the pairs. Give names in their
 base (nominative) form, in uppercase as in the lettering, Serbian in Latin script.
 Skip items that are identical in both languages. If there are no pairs, return no entries.
 

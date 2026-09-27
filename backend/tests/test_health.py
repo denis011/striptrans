@@ -73,6 +73,7 @@ def test_debug_llm_returns_response_and_speed(client):
         "load_seconds": 0.0,
         "prompt_tokens_per_second": 160.0,
         "eval_tokens_per_second": 59.0,
+        "truncated": False,
     }
 
 

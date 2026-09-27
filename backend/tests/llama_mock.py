@@ -11,10 +11,9 @@ CHAT = "/v1/chat/completions"
 MODEL = "qwen2.5vl:7b"
 
 
-def reply(content: str, timings: dict | None = None) -> httpx.Response:
-    return httpx.Response(
-        200, json={"choices": [{"message": {"content": content}}], "timings": timings or {}}
-    )
+def reply(content: str, timings: dict | None = None, finish: str = "stop") -> httpx.Response:
+    choice = {"message": {"content": content}, "finish_reason": finish}
+    return httpx.Response(200, json={"choices": [choice], "timings": timings or {}})
 
 
 def sent(request: httpx.Request) -> dict:

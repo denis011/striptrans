@@ -132,6 +132,19 @@ describe("ViewerPage", () => {
     expect(canvasUrls()).toEqual(["/api/pages/11/image", "/api/pages/21/image"]);
   });
 
+  it("traka sličica ima brojeve stranica i ističe trenutnu", async () => {
+    renderEditor(2);
+    await screen.findByTestId("page-indicator");
+
+    const current = screen.getByRole("link", { name: "Stranica 2" });
+    expect(current).toHaveAttribute("aria-current", "page");
+    expect(current).toHaveTextContent("2");
+    expect(screen.getByRole("link", { name: "Stranica 1" })).not.toHaveAttribute("aria-current");
+
+    await userEvent.keyboard("{ArrowRight}");
+    expect(screen.getByRole("link", { name: "Stranica 3" })).toHaveAttribute("aria-current", "page");
+  });
+
   it("menja stranice tastaturom", async () => {
     renderEditor(1);
     await screen.findByTestId("page-indicator");
@@ -228,6 +241,31 @@ describe("ViewerPage", () => {
     await waitFor(() => expect(calls(fetchMock, "DELETE", "/api/patches/7")).toHaveLength(1));
   });
 
+  it("strelice pomeraju izabrani blok (Shift za 10 px) i čuvaju jednom", async () => {
+    const fetchMock = renderEditor(1, { "PATCH /api/blocks/101": blocks[0] });
+    await userEvent.click(await screen.findByTestId("block-101"));
+
+    await userEvent.keyboard("{Shift>}{ArrowRight}{ArrowRight}{/Shift}{ArrowDown}");
+
+    await waitFor(() => expect(calls(fetchMock, "PATCH", "/api/blocks/101")).toHaveLength(1), { timeout: 2000 });
+    const body = JSON.parse(String(calls(fetchMock, "PATCH", "/api/blocks/101")[0][1]?.body));
+    expect(body).toEqual({ x: blocks[0].x + 20, y: blocks[0].y + 1 });
+    expect(screen.getByTestId("page-indicator")).toHaveTextContent("1");
+  });
+
+  it("strelice pomeraju izabranu zakrpu", async () => {
+    const patch = { id: 7, position: 1, x: 10, y: 20, width: 100, height: 50, rotation: 0, opacity: 1, above_text: false, url: "/api/patches/7/image" };
+    const fetchMock = renderEditor(1, { "GET /api/pages/11/patches": [patch], "PATCH /api/patches/7": patch });
+    await screen.findByTestId("page-indicator");
+    await userEvent.click(screen.getByRole("button", { name: "Zakrpe (P)" }));
+    await userEvent.click(await screen.findByRole("button", { name: "mock-zakrpa-7" }));
+
+    await userEvent.keyboard("{ArrowLeft}{ArrowUp}{ArrowUp}");
+
+    await waitFor(() => expect(calls(fetchMock, "PATCH", "/api/patches/7")).toHaveLength(1), { timeout: 2000 });
+    expect(JSON.parse(String(calls(fetchMock, "PATCH", "/api/patches/7")[0][1]?.body))).toEqual({ x: 9, y: 18 });
+  });
+
   it("Delete briše izabrani blok", async () => {
     const fetchMock = renderEditor(1, { "DELETE /api/blocks/101": null });
     await userEvent.click(await screen.findByTestId("block-101"));
@@ -247,6 +285,24 @@ describe("ViewerPage", () => {
     await waitFor(() => expect(calls(fetchMock, "PATCH", "/api/blocks/102")).toHaveLength(1));
     const [, init] = calls(fetchMock, "PATCH", "/api/blocks/102")[0];
     expect(JSON.parse(String(init?.body))).toEqual({ text: "SCERIFFO!!" });
+  });
+
+  it("povezuje blok sa nastavkom teksta u drugom bloku", async () => {
+    const fetchMock = renderEditor(1, { "PATCH /api/blocks/101": { ...blocks[0], continues_id: 102 } });
+
+    await userEvent.click(await screen.findByTestId("block-101"));
+    await userEvent.selectOptions(screen.getByLabelText("Nastavak bloka 1"), "102");
+
+    await waitFor(() => expect(calls(fetchMock, "PATCH", "/api/blocks/101")).toHaveLength(1));
+    const [, init] = calls(fetchMock, "PATCH", "/api/blocks/101")[0];
+    expect(JSON.parse(String(init?.body))).toEqual({ continues_id: 102 });
+  });
+
+  it("označava nastavak teksta i veza se vidi bez izbora bloka", async () => {
+    renderEditor(1, { "GET /api/pages/11/blocks": [{ ...blocks[0], continues_id: 102 }, blocks[1]] });
+
+    expect(await screen.findByText("nastavak bloka 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("Nastavak bloka 1")).toHaveValue("102");
   });
 
   it("pravi nov blok iz nacrtanog pravougaonika", async () => {
@@ -367,15 +423,26 @@ describe("ViewerPage", () => {
       reviewed: false,
       blocks: [
         { block_id: blocks[0].id, position: 1, unknown: ["GREJVUD"], glossary_missing: ["MIĆO"], non_serbian: ["TISUĆU"], too_long: false },
-        { block_id: blocks[1].id, position: 2, unknown: [], glossary_missing: [], too_long: false, emphasis_missing: true },
+        {
+          block_id: blocks[1].id,
+          position: 2,
+          unknown: [],
+          glossary_missing: [],
+          too_long: false,
+          emphasis_missing: true,
+          sfx_unconfirmed: [["SWISH", "SVIŠ"]],
+        },
       ],
     };
     const fetchMock = renderEditor(1, {
       "GET /api/pages/11/review": review,
       "POST /api/series/1/dictionary": { id: 5, series_id: 1, word: "grejvud" },
+      "POST /api/sfx-glossary": { id: 9, source: "SWISH", target: "SVIŠ", note: null },
     });
 
     await userEvent.click(await screen.findByLabelText("Dodaj GREJVUD u rečnik"));
+    await userEvent.click(screen.getByLabelText("Potvrdi SWISH → SVIŠ u glosaru onomatopeja"));
+    await waitFor(() => expect(calls(fetchMock, "POST", "/api/sfx-glossary")).toHaveLength(1));
 
     expect(screen.getByText("glosar: MIĆO")).toBeInTheDocument();
     expect(screen.getByText("nije srpski: TISUĆU")).toBeInTheDocument();
@@ -557,6 +624,36 @@ describe("ViewerPage", () => {
     expect(JSON.parse(String(calls(fetchMock, "POST", "/api/pages/11/mask")[0][1]?.body))).toEqual({
       strokes: [{ mode: "erase", radius: 12, points: [[10, 20], [30, 40]] }],
     });
+  });
+
+  it("četkicom briše deo zakrpe ispod poteza", async () => {
+    const patch = { id: 7, position: 1, x: 0, y: 0, width: 100, height: 100, rotation: 0, opacity: 1, above_text: false, url: "/api/patches/7/image" };
+    const fetchMock = renderEditor(1, {
+      "GET /api/pages/11/patches": [patch],
+      "POST /api/patches/7/mask": { ...patch, url: "/api/patches/7/image?v=mask-1" },
+    });
+    await screen.findByRole("button", { name: "Četkica (B)" });
+
+    await userEvent.keyboard("b");
+    await userEvent.selectOptions(screen.getByLabelText("Mod četkice"), "patch-hide");
+    await userEvent.click(screen.getByRole("button", { name: "mock-potez" }));
+
+    await waitFor(() => expect(calls(fetchMock, "POST", "/api/patches/7/mask")).toHaveLength(1));
+    expect(JSON.parse(String(calls(fetchMock, "POST", "/api/patches/7/mask")[0][1]?.body))).toEqual({
+      strokes: [{ mode: "hide", radius: 12, points: [[10, 20], [30, 40]] }],
+    });
+    expect(calls(fetchMock, "POST", "/api/pages/11/mask")).toHaveLength(0);
+  });
+
+  it("javlja kad potez za zakrpu nije počeo na zakrpi", async () => {
+    renderEditor(1);
+    await screen.findByRole("button", { name: "Četkica (B)" });
+
+    await userEvent.keyboard("b");
+    await userEvent.selectOptions(screen.getByLabelText("Mod četkice"), "patch-show");
+    await userEvent.click(screen.getByRole("button", { name: "mock-potez" }));
+
+    expect(await screen.findByText("Potez nije počeo na zakrpi.")).toBeInTheDocument();
   });
 
   it("čuva stranicu u punoj rezoluciji, očišćenu i sa prevodom", async () => {

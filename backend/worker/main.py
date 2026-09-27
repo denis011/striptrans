@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import Settings, get_settings
@@ -113,6 +114,20 @@ def run_once(
     return True
 
 
+def run_once_safe(
+    session_factory: sessionmaker,
+    worker_id: str,
+    settings: Settings,
+    llama: LlamaServerClient | None = None,
+) -> bool:
+    """Kao run_once, ali zaključana baza ne ruši petlju: pokušaj ponovo u sledećem krugu."""
+    try:
+        return run_once(session_factory, worker_id, settings, llama)
+    except OperationalError as error:
+        log.warning("baza nije dostupna (%s), pokušavam ponovo", error.orig)
+        return False
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     settings = get_settings()
@@ -135,7 +150,7 @@ def main() -> None:
 
     log.info("worker %s pokrenut", worker_id)
     while not stopping:
-        if not run_once(session_factory, worker_id, settings, llama):
+        if not run_once_safe(session_factory, worker_id, settings, llama):
             time.sleep(settings.worker_poll_interval)
     log.info("worker %s zaustavljen", worker_id)
 

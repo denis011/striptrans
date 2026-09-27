@@ -403,7 +403,7 @@ export default function PageCanvas({
             <Layer listening={false}>
               <Line
                 points={stroke.flat()}
-                stroke={brush.mode === "add" ? "rgba(220,38,38,0.45)" : "rgba(37,99,235,0.45)"}
+                stroke={brush.mode === "add" || brush.mode === "patch-hide" ? "rgba(220,38,38,0.45)" : "rgba(37,99,235,0.45)"}
                 strokeWidth={brush.radius * 2}
                 lineCap="round"
                 lineJoin="round"

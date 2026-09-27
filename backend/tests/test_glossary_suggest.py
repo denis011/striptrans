@@ -6,7 +6,7 @@ from worker.main import run_once
 
 LLM_ENTRIES = [
     {"source": "Mico", "target": "Mićo", "kind": "name"},
-    {"source": "AH!", "target": "AH!", "kind": "sfx"},  # isto u oba jezika
+    {"source": "AH!", "target": "AH!", "kind": "phrase"},  # isto u oba jezika
     {"source": "GREYWOOD", "target": "GREJVUD", "kind": "place"},  # nema ga u tekstu
     {"source": "ANDIAMO", "target": "IDEMO", "kind": "nešto"},  # nepoznata vrsta
 ]

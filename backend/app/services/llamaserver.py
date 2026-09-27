@@ -111,6 +111,7 @@ class LlamaServerClient:
             load_seconds=0.0,
             prompt_tokens_per_second=round(timings.get("prompt_per_second", 0.0), 1),
             eval_tokens_per_second=round(timings.get("predicted_per_second", 0.0), 1),
+            truncated=choices[0].get("finish_reason") == "length",
         )
 
 

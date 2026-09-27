@@ -38,12 +38,14 @@ Rules:
 - Use the vocative case when a character is addressed (RAMONE!, MIĆO!, TODE!, ŠERIFE!).
 - The lettering writes accents as an apostrophe after the vowel: E' = È (is), SI' = SÌ (yes),
   PERCHE' = PERCHÉ, GIA' = GIÀ, PUO' = PUÒ; a real apostrophe stays inside words (L'UOMO, PO').
-- Sound effects: adapt them to Serbian pronunciation (SWACK → SCVAK); keep short interjections
-  such as AH! or UNGH! unchanged.
+- Keep short interjections such as AH! or UNGH! unchanged.
 - Words between asterisks (*ADESSO BASTA*) are emphasized (bold) in the original: put asterisks
   around the Serbian words that carry the same emphasis (*SAD JE DOSTA*), the same number of
   times; never add asterisks anywhere else.
-- Translate each block separately and keep the numbering; do not merge or split blocks."""
+- Translate each block separately and keep the numbering; do not merge or split blocks.
+- The mark ‖ inside a block shows where the text continues in the next column or balloon:
+  translate the whole block as one text and put exactly the same number of ‖ marks at the
+  corresponding places of the translation, so that each part fits its own column."""
 
 SCHEMA = {
     "type": "object",

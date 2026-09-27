@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.deps import SessionDep, SettingsDep
 from app.models import Patch
 from app.routers.pages import get_page
-from app.schemas import PatchOut, PatchPatch
+from app.schemas import PatchMaskEdit, PatchOut, PatchPatch
 from app.services import history, patches
 
 router = APIRouter(prefix="/api", tags=["patches"])
@@ -82,7 +82,24 @@ def patch_image(patch_id: int, session: SessionDep, settings: SettingsDep) -> Fi
     path = Path(settings.data_dir, patch.path)
     if not path.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "slika zakrpe ne postoji")
+    if patch.mask_path:  # adresa sadrži verziju maske, pa i ovaj odgovor sme u keš
+        image = patches.masked_image(Path(settings.data_dir), patch)
+        return Response(image, media_type="image/png", headers=IMMUTABLE)
     return FileResponse(path, headers=IMMUTABLE)
+
+
+@router.post("/patches/{patch_id}/mask")
+def edit_patch_mask(
+    patch_id: int, data: PatchMaskEdit, session: SessionDep, settings: SettingsDep
+) -> PatchOut:
+    """Četkica po zakrpi: „hide" otkriva ono ispod zakrpe, „show" vraća zakrpu."""
+    patch = get_patch(session, patch_id)
+    page = get_page(session, patch.page_id)
+    history.record(session, page, "četkica po zakrpi")
+    strokes = [patches.PatchStroke(s.mode, s.radius, list(s.points)) for s in data.strokes]
+    patches.edit_mask(Path(settings.data_dir), page.project_id, patch, strokes)
+    session.commit()
+    return patch
 
 
 @router.get("/pages/{page_id}/crop")

@@ -21,7 +21,6 @@ const KINDS: [GlossaryKind, string][] = [
   ["name", "Ime"],
   ["place", "Mesto"],
   ["phrase", "Izraz"],
-  ["sfx", "Onomatopeja"],
 ];
 
 function KindSelect({ value, label, onChange }: { value: GlossaryKind; label: string; onChange: (kind: GlossaryKind) => void }) {

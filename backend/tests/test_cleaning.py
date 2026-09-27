@@ -275,3 +275,21 @@ def test_cleaning_works_without_the_optional_text_model(client, tmp_path):
     run_once(state.session_factory, "w1", state.settings)
 
     assert client.get(f"/api/jobs/{job['id']}").json()["status"] == "done"
+
+
+def test_covered_sound_effect_is_not_erased(client, monkeypatch):
+    """„Prekrij original": onomatopeja ostaje na očišćenoj strani (nova slova je prekrivaju)."""
+    erased = []
+    monkeypatch.setattr(cleaning, "inpaint", lambda image, mask, models: erased.append(1) or image)
+    page = create_page(client)
+    body = {"x": 100, "y": 100, "width": 200, "height": 80, "text": "SWACK", "kind": "sfx"}
+    block = client.post(f"/api/pages/{page['id']}/blocks", json=body).json()
+    client.patch(
+        f"/api/blocks/{block['id']}", json={"translation": "SCVAK", "style": {"cover": True}}
+    )
+
+    client.post(f"/api/pages/{page['id']}/clean")
+    state = client.app.state
+    run_once(state.session_factory, "w1", state.settings)
+
+    assert erased == []

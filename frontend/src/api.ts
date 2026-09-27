@@ -94,6 +94,7 @@ export interface TextBlock extends Rect {
   angle?: number | null; // nagib originalne onomatopeje (stepeni)
   dark_background?: boolean | null; // tamna podloga posle čišćenja: prevod se slaže svetlim slovima
   title?: TitleGlyphs | null; // naslov: slova isečena iz originala i dopunjena (Faza 6a)
+  continues_id?: number | null; // tekst se nastavlja u ovom bloku (kolone, prelomljen oblačić)
 }
 
 /** Jedno slovo naslova: slika sa providnošću i mere za slaganje (px slike). */
@@ -181,6 +182,7 @@ export interface LetteringStyle {
   fill_box?: boolean; // „Uklopi u okvir": tekst puni okvir bloka, veličina slova se bira slobodno
   emphasis?: boolean; // „Naglašeno": ceo blok podebljan i ukošen (vika, psovka), kao u srpskim izdanjima
   letter_fonts?: Record<string, string>; // naslov: font za slovo kojeg nema u originalu (K → Anton)
+  cover?: boolean; // onomatopeja/natpis preko crteža: original se ne briše, nova slova ga prekriju obrubom
 }
 
 export interface LetterStyle {
@@ -213,6 +215,7 @@ export type TranslationStatus = "none" | "draft" | "edited" | "approved";
 
 export type BlockChanges = Partial<Rect> & {
   kind?: BlockKind;
+  continues_id?: number | null;
   text?: string;
   needs_review?: boolean;
   translation?: string;
@@ -408,7 +411,7 @@ export const processPage = (pageId: number, model?: string) =>
 export const processProject = (projectId: number, model: string | undefined, replace: boolean) =>
   request<Job>(`/api/projects/${projectId}/process`, json("POST", { model, replace }));
 
-export type GlossaryKind = "name" | "place" | "phrase" | "sfx";
+export type GlossaryKind = "name" | "place" | "phrase";
 
 export interface GlossaryEntry {
   id: number;
@@ -432,6 +435,31 @@ export const updateGlossaryEntry = (id: number, changes: GlossaryChanges) =>
 export const suggestGlossary = (seriesId: number, projectId: number, referenceProjectId: number) =>
   request<Job>(`/api/series/${seriesId}/glossary/suggest`, json("POST", { project_id: projectId, reference_project_id: referenceProjectId }));
 export const deleteGlossaryEntry = (id: number) => request<void>(`/api/glossary/${id}`, { method: "DELETE" });
+
+/** Glosar onomatopeja, zajednički za sve serijale; izvor su samo slova (WOAH! = WOAH). */
+export interface SfxEntry {
+  id: number;
+  source: string;
+  target: string;
+  note: string | null;
+}
+
+/** Reč onomatopeje iz projekata koje nema u glosaru, sa predlogom po pravilu (SH i W). */
+export interface SfxMissing {
+  source: string;
+  suggestion: string;
+  count: number;
+}
+
+export type SfxChanges = Partial<Pick<SfxEntry, "source" | "target" | "note">>;
+
+export const listSfx = () => request<SfxEntry[]>("/api/sfx-glossary");
+export const listMissingSfx = () => request<SfxMissing[]>("/api/sfx-glossary/missing");
+export const createSfx = (entry: { source: string; target: string; note?: string }) =>
+  request<SfxEntry>("/api/sfx-glossary", json("POST", entry));
+export const updateSfx = (id: number, changes: SfxChanges) => request<SfxEntry>(`/api/sfx-glossary/${id}`, json("PATCH", changes));
+export const deleteSfx = (id: number) => request<void>(`/api/sfx-glossary/${id}`, { method: "DELETE" });
+export const applySfx = (projectId: number) => request<{ changed: number }>(`/api/projects/${projectId}/sfx/apply`, json("POST", {}));
 
 export const listTranslationModels = () => request<OcrModels>("/api/translation/models");
 export const translateBlock = (id: number, model: string | undefined, shorter: boolean) =>
@@ -496,6 +524,10 @@ export interface BlockReview {
   too_long: boolean;
   /** naglašene reči originala (`*…*`) nisu prenete u prevod */
   emphasis_missing?: boolean;
+  /** onomatopeje [original, predlog] po pravilu (SH, W) ili produžene, koje čekaju potvrdu u glosaru */
+  sfx_unconfirmed?: [string, string][];
+  /** duga naracija bez kraja rečenice i bez veze sa nastavkom */
+  maybe_continues?: boolean;
 }
 
 export interface PageReview {
@@ -523,13 +555,18 @@ export const reshapeProject = (projectId: number) =>
   request<Job>(`/api/projects/${projectId}/shapes`, { method: "POST" });
 
 export interface MaskStroke {
-  mode: "add" | "erase" | "inpaint"; // add: obriši bojom okoline, inpaint: preko crteža (LaMa), erase: vrati original
+  // add: obriši bojom okoline, inpaint: preko crteža (LaMa), erase: vrati original;
+  // patch-hide: obriši deo zakrpe (vidi se ono ispod), patch-show: vrati deo zakrpe
+  mode: "add" | "erase" | "inpaint" | "patch-hide" | "patch-show";
   radius: number;
   points: [number, number][];
 }
 
 export const editMask = (pageId: number, strokes: MaskStroke[]) =>
   request<Page>(`/api/pages/${pageId}/mask`, json("POST", { strokes }));
+/** Četkica po zakrpi: hide briše deo zakrpe, show ga vraća (original slike ostaje). */
+export const editPatchMask = (patchId: number, strokes: { mode: "hide" | "show"; radius: number; points: [number, number][] }[]) =>
+  request<Patch>(`/api/patches/${patchId}/mask`, json("POST", { strokes }));
 
 /** Scenario za lektora: tabela oblačić po oblačić (HTML za čitanje, CSV za tabelu). */
 export const projectScriptUrl = (projectId: number, format: "html" | "csv") =>

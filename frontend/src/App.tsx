@@ -5,6 +5,7 @@ import GlossaryPage from "./pages/GlossaryPage";
 import ProjectPage from "./pages/ProjectPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import RatingsPage from "./pages/RatingsPage";
+import SfxGlossaryPage from "./pages/SfxGlossaryPage";
 import StatusPage from "./pages/StatusPage";
 import ViewerPage from "./pages/ViewerPage";
 
@@ -36,6 +37,7 @@ export default function App() {
           <NavLink to="/" end>
             Projekti
           </NavLink>
+          <NavLink to="/sfx-glossary">Onomatopeje</NavLink>
           <NavLink to="/status">Status</NavLink>
         </nav>
         <ThemeToggle />
@@ -47,6 +49,7 @@ export default function App() {
         <Route path="/projects/:projectId" element={<ProjectPage />} />
         <Route path="/projects/:projectId/export" element={<ExportPage />} />
         <Route path="/series/:seriesId/glossary" element={<GlossaryPage />} />
+        <Route path="/sfx-glossary" element={<SfxGlossaryPage />} />
         <Route path="/ratings/:study" element={<RatingsPage />} />
         <Route path="/projects/:projectId/pages/:position" element={<ViewerPage />} />
         <Route

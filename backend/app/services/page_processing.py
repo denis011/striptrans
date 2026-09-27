@@ -18,7 +18,7 @@ from app.services.detector import DetectedBlock, detect, text_blocks
 from app.services.geometry import Box, rect_polygon
 from app.services.llamaserver import LlamaServerClient
 from app.services.llm_base import LlmError
-from app.services.ocr import read_block
+from app.services.ocr import not_a_sound, read_block
 from app.services.panels import detect_panels, order_by_panels
 from app.services.sfx import sfx_candidates
 
@@ -158,6 +158,8 @@ def process_page(
                 on_block(done, len(blocks))
             continue
         block.ocr_text = block.text = ocr.text
+        if block.kind == "sfx" and not_a_sound(ocr.text):
+            block.kind = "other"  # natpis ili naslov, ne onomatopeja
         block.ocr_model = model
         block.needs_review = block.needs_review or ocr.needs_review
         if settings.emphasis_detection:

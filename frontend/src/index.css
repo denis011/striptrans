@@ -189,11 +189,18 @@ button.badge.warning:hover { filter: brightness(0.95); }
 .step-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .step-actions .detail { font-size: 0.85rem; }
 .glossary-form { display: grid; grid-template-columns: 1fr 1fr 140px 1fr auto; gap: 8px; }
-@media (max-width: 700px) { .glossary-form { grid-template-columns: 1fr; } }
+.glossary-form.sfx-form { grid-template-columns: 1fr 1fr 1fr auto; }
+@media (max-width: 700px) { .glossary-form, .glossary-form.sfx-form { grid-template-columns: 1fr; } }
+table.glossary.missing { table-layout: fixed; }
+table.glossary.missing td { overflow-wrap: anywhere; }
+table.glossary.missing th:nth-child(3) { width: 80px; }
+table.glossary.missing th:nth-child(4) { width: 90px; }
 table.glossary input, table.glossary select { width: 100%; box-sizing: border-box; }
 table.glossary tr.suggested { background: var(--suggested); }
 .tabs .filter { margin-left: auto; }
 .row-actions { white-space: nowrap; }
+.block-list label.continues { display: flex; gap: 6px; align-items: center; font-size: 0.8rem; color: var(--muted); margin-top: 4px; }
+.block-list label.continues select { flex: 1; min-width: 0; }
 .suggest { flex-wrap: wrap; gap: 12px; }
 .rating-source { font-size: 1.1rem; font-weight: 600; letter-spacing: 0.02em; }
 .rating-candidate { display: grid; grid-template-columns: 24px 1fr auto; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border); }
@@ -276,8 +283,10 @@ button.small { padding: 1px 8px; font-size: 0.8rem; }
 .block-editor:focus { outline: none; }
 .overlay { position: absolute; top: 8px; left: 8px; margin: 0; }
 .filmstrip { display: flex; gap: 6px; overflow-x: auto; padding: 4px 10px; background: var(--surface); border-top: 1px solid var(--border); flex: none; }
-.filmstrip a { flex: none; border: 2px solid transparent; border-radius: 3px; }
-.filmstrip a.current { border-color: var(--accent); }
+.filmstrip a { flex: none; display: flex; flex-direction: column; align-items: center; border: 3px solid transparent; border-radius: 4px; padding: 1px; text-decoration: none; color: var(--muted); }
+.filmstrip a.current { border-color: var(--accent); background: var(--accent); }
+.filmstrip .page-number { font-size: 0.75rem; line-height: 1.2; padding: 1px 4px; font-variant-numeric: tabular-nums; }
+.filmstrip a.current .page-number { color: var(--surface); font-weight: 700; }
 .filmstrip a.reviewed img { outline: 2px solid var(--ok); }
 .filmstrip img { height: 60px; display: block; }
 .editor-body { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 360px; min-height: 0; }

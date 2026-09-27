@@ -2,7 +2,7 @@ import io
 
 import httpx
 from factories import create_page, jpeg_bytes
-from llama_mock import llama_client, ocr_server, refused, reply
+from llama_mock import llama_client, ocr_server, refused, reply, sent
 from PIL import Image
 
 from app.services.llm_base import LlmError
@@ -201,3 +201,33 @@ def test_sound_effect_loop_is_left_for_review(make_client):
 
     assert (read["text"], read["needs_review"]) == ("TLENNNN", True)
     assert requests[0]["max_tokens"] == 60
+
+
+def test_sound_effect_proposal_with_several_words_is_a_sign():
+    from app.services.ocr import not_a_sound
+
+    for sign in ("SERIE D'ORO\nNUMERO SPECIALE", "LA VALLE DEL SILENZIO", "Il vento non spara"):
+        assert not_a_sound(sign)
+    for sound in ("BANG BANG BANG", "KLOP-KLOP-KLOP", "BANG ZIIIP ZIIING", "SWACK", "AH AH AH!"):
+        assert not not_a_sound(sound)
+
+
+def test_long_text_cut_at_token_limit_is_read_again(make_client):
+    requests = []
+    server = ocr_server([])
+
+    def handler(request):
+        if request.url.path != "/v1/chat/completions":
+            return server(request)
+        body = sent(request)
+        requests.append(body)
+        if body["max_tokens"] == 400:
+            return reply("IL VECCHIO FARO GUIDA LE BARCHE FINO AL PO", finish="length")
+        return reply("IL VECCHIO FARO GUIDA LE BARCHE FINO AL PORTO.")
+
+    client = make_client(handler)
+    block = add_block(client, create_page(client))
+    body = client.post(f"/api/blocks/{block['id']}/ocr", json={"model": "qwen2.5vl:7b"}).json()
+
+    assert body["text"] == "IL VECCHIO FARO GUIDA LE BARCHE FINO AL PORTO."
+    assert [r["max_tokens"] for r in requests] == [400, 1600]

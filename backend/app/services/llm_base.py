@@ -21,3 +21,4 @@ class GenerateResult:
     load_seconds: float
     prompt_tokens_per_second: float
     eval_tokens_per_second: float
+    truncated: bool = False  # odgovor je prekinut na max_tokens (finish_reason „length")

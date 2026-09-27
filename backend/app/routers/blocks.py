@@ -82,6 +82,32 @@ def create_block(page_id: int, data: BlockIn, session: SessionDep) -> BlockOut:
     return block
 
 
+def _continuation(session: Session, block: TextBlock, target_id: int | None) -> int | None:
+    """Nastavak mora biti drugi blok iste stranice, bez drugog prethodnika i bez kruga."""
+    if target_id is None:
+        return None
+    target = session.get(TextBlock, target_id)
+    if target is None or target.page_id != block.page_id or target.id == block.id:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "nastavak mora biti blok iste stranice"
+        )
+    other = session.scalar(
+        select(TextBlock).where(TextBlock.continues_id == target.id, TextBlock.id != block.id)
+    )
+    if other is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"blok {target.position} je već nastavak bloka {other.position}",
+        )
+    step, seen = target, set()
+    while step is not None and step.id not in seen:
+        if step.id == block.id:
+            raise HTTPException(status.HTTP_409_CONFLICT, "veza bi napravila krug")
+        seen.add(step.id)
+        step = session.get(TextBlock, step.continues_id) if step.continues_id else None
+    return target.id
+
+
 @router.patch("/blocks/{block_id}")
 def update_block(
     block_id: int, data: BlockPatch, session: SessionDep, settings: SettingsDep
@@ -92,6 +118,8 @@ def update_block(
     changes = data.model_dump(exclude_unset=True, exclude_none=True)
     if "style" in data.model_fields_set:  # null je dozvoljen: vraća automatsko slaganje
         changes["style"] = data.style.model_dump() if data.style else None
+    if "continues_id" in data.model_fields_set:
+        changes["continues_id"] = _continuation(session, block, data.continues_id)
     if "translation" in changes:
         changes["translation"] = changes["translation"].upper()
         changes.setdefault("translation_status", "edited")

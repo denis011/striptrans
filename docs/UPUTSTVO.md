@@ -228,7 +228,7 @@ zelenu kvačicu umesto broja. Preskočene stranice se ne broje.
 | **1. Uvezi stranice** | broj stranica originala i reference | (fajlovi se prevlače u polje iznad sličica) |
 | **2. Označi stranice koje se preskaču** | koje su preskočene | (dugme ⊘ na sličici) |
 | **3. Pronađi blokove i pročitaj tekst (OCR)** | koliko stranica je obrađeno; ako je obrada bila prekinuta, piše i koliko je blokova ostalo nepročitano — „Obradi ceo projekat" ih dočita, ne dirajući ostale | OCR model, „Zameni postojeće blokove" (briše ručno ispravljene blokove — pažljivo), „Obradi ceo projekat" |
-| **4. Prevedi** | koliko blokova je bez prevoda, u nacrtu, izmenjeno, odobreno | model prevoda, „Ponovo prevedi nacrte", „Prevedi ceo projekat" |
+| **4. Prevedi** | koliko blokova je bez prevoda, u nacrtu, izmenjeno, odobreno | model prevoda, „Ponovo prevedi nacrte", „Prevedi ceo projekat", „Onomatopeje po glosaru", „Glosar onomatopeja" |
 | **5. Lektura** | koliko stranica je lektorisano | Scenario, CSV, Glosar |
 | **6. Očisti originalni tekst** | koliko stranica je očišćeno | „Očisti ceo projekat" |
 | **7. Doteraj slaganje u editoru** | — | Otvori pregled, „Ponovo izmeri oblačiće" (aktivno kad je bar jedna strana očišćena) |
@@ -242,7 +242,8 @@ Posao radi u pozadini i nastavlja se i ako se kontejneri restartuju. Može se pr
 ### 2.4 Editor stranice
 
 Otvara se klikom na sličicu. Gore su dve niske trake, u sredini je stranica, desno lista blokova, a na dnu sličice
-(zelen okvir znači lektorisanu stranicu).
+sa brojem stranice ispod svake. Trenutna stranica ima obojen okvir i istaknut broj, a traka se sama pomera do nje;
+zelen okvir znači lektorisanu stranicu.
 
 **Gornja traka:** StripTrans (početna), naziv projekta (nazad na projekat), ‹ strana › , prikaz (Cela, Širina,
 1:1), oznake stranice kao prekidači (**OCR proveren**, **Lektorisana**, **Preskoči**), dugmad za sakrivanje sličica
@@ -276,6 +277,12 @@ ostavlja otvorenim.
   „Čitaj nov blok" u meniju OCR, nacrtaj blok (N) gde treba, polje za original ostavi prazno, a svoj tekst upiši
   u polje za prevod. Tip, font, boja, obrub i „Uklopi u okvir" rade kao kod svakog bloka. Blok bez originalnog
   teksta se pri čišćenju nikad ne briše, pa crtež ispod njega ostaje netaknut;
+- **Prekrij original** (onomatopeja ili natpis preko crteža, u panelu bloka uz boju i obrub): original se ne briše,
+  već ga nova slova prekriju debelim obrubom boje papira, kao nalepnica. Korisno kad brisanje preko gustog crteža
+  ostavi mrlje; mana je što se ispod obruba ne vidi crtež. Važi posle „Očisti stranicu"; ostatke dočisti četkicom,
+  a debljinu obruba menjaj sa − / +.
+- Predlog onomatopeje čiji je pročitan tekst zapravo natpis (tri različite reči, bez ponavljanja kao „BANG BANG"
+  ili „ZIIIP") aplikacija sama označi kao **natpis**.
 - **AI prepravka natpisa** (naslov, natpis, onomatopeja; izabran blok sa originalnim tekstom i prevodom): u panelu
   **„Prepravi AI-jem"** i izbor „kvalitetno (~0,07 $)" ili „jeftino (~0,03 $)". Model za slike crta prevod istim
   slovima na isečku originala (za ~5–10 s); predlog se vidi uz original. **Proveri slova** — model ume da pogreši
@@ -313,6 +320,17 @@ ostavlja otvorenim.
   oblačića se dalje prelama sam (dovoljan je jedan Enter, npr. pre reda uz obod šešira). Kad je Enter na kraju
   svakog reda, raspored ostaje tačno kako je upisan; red koji ne staje je crven, a panel kaže koji je.
 
+**Tekst u više blokova (kolone, prelomljen oblačić):**
+- kad se tekst nastavlja u drugom bloku (uvodnik u tri kolone, rečenica prelomljena u dva oblačića), izaberi blok i
+  u polju **„Nastavlja se u"** izaberi blok sa nastavkom. Lanac može imati više karika (kolona 1 → 2 → 3), a blokovi ne
+  moraju biti jedan za drugim u listi;
+- ceo lanac se prevodi u jednom komadu, pa rečenica prelomljena između kolona („…PRIČU JE NACRTAO | NJEGOV PRIJATELJ…") ostaje cela.
+  Model prelama prevod na istom mestu kao original; ako to ne uspe, prevod se deli srazmerno dužini kolona, a ti ga
+  u lekturi pomeriš. „Prevedi" na jednom bloku lanca prevodi ceo lanac; ručno izmenjeni i odobreni delovi ostaju;
+- blok koji je nastavak ima oznaku **„nastavak bloka N"**; „— (samostalan tekst)" raskida vezu;
+- duga naracija koja se završava usred rečenice, bez veze sa nastavkom, dobija upozorenje **„nastavlja se?"**
+  (potpis „Ime Prezime" u poslednjem redu se ne računa).
+
 **Čišćenje:**
 - **Očisti** briše originalni tekst. Govor, misao i naracija se prekrivaju bojom oblačića. Onomatopeje i
   natpisi (Ostalo) se brišu preko crteža samo ako imaju prevod različit od originala;
@@ -320,6 +338,9 @@ ostavlja otvorenim.
   - *obriši tekst (belo)*: ostatak slova se prekriva bojom okoline;
   - *obriši preko crteža*: LaMa dopunjuje crtež;
   - *vrati original*: vraća piksele originala (kad je čišćenje obrisalo deo crteža);
+  - *obriši zakrpu*: deo zakrpe pod potezom postaje providan, pa se vidi ono ispod nje (tekst i crtež stranice).
+    Potez deluje na izabranu zakrpu, a ako nijedna nije izabrana, na najgornju zakrpu na mestu gde potez počinje;
+  - *vrati zakrpu*: vraća obrisani deo zakrpe (slika zakrpe se ne menja, pa se sve može vratiti; radi i Poništi);
 - zum ostaje isti posle poteza četkicom;
 - ako se blokovi menjaju posle čišćenja, „Pripremi ceo album" će tu stranicu ponovo očistiti.
 
@@ -403,7 +424,9 @@ ostavlja otvorenim.
 
 | Taster | Radnja |
 |---|---|
-| ← / → , PageUp / PageDown | prethodna / sledeća stranica |
+| ← / → , PageUp / PageDown | prethodna / sledeća stranica (strelice samo kad nijedan blok ni zakrpa nisu izabrani) |
+| ← ↑ → ↓ | pomera izabrane blokove (ili izabranu zakrpu u režimu Zakrpe) za 1 px stranice; čuva se kad pustiš strelice |
+| Shift + ← ↑ → ↓ | isto, za 10 px |
 | Home / End | prva / poslednja stranica |
 | N | režim Blok (novi blok) |
 | R | ponovo pročitaj izabrane blokove |
@@ -442,6 +465,25 @@ Otvara se dugmetom „Glosar" na strani projekta.
   odobravaju ili odbacuju.
 - Odobren prevod bloka ulazi u memoriju prevoda: isti italijanski tekst na drugom mestu dobija isti prevod bez
   poziva modela.
+
+### 2.6a Glosar onomatopeja
+
+Otvara se linkom „Onomatopeje" u gornjem meniju ili dugmetom „Glosar onomatopeja" u koraku Prevedi. Zajednički je za
+sve serijale.
+- Onomatopeje se **ne šalju modelu** na prevod. Prvo se traži glosar, a reč koje nema u glosaru ostaje ista, osim ako
+  ima SH ili W: tada se prilagođava izgovoru (CRASH → KRAŠ, SWISH → SVIŠ, produženo SHHH → ŠŠŠ, CK → K, C → K).
+- U glosar idu i onomatopeje koje se ne menjaju (BANG → BANG), kao i izuzeci od pravila (SWACK → SCVAK).
+- Izvor se čuva samo kao slova: „WOAH!" i „WOAH" su ista stavka. Znaci iz originala ostaju u prevodu (SWACK!! →
+  SCVAK!!). Stavka od više reči („AH! AH! AH!") važi samo za ceo blok.
+- **Potvrda:** reč promenjena po pravilu (SWISH → SVIŠ) i produžena reč (CRAAASH → KRAAAŠ, po stavci CRASH → KRAŠ)
+  su samo predlog. U panelu bloka dobijaju oznaku „SWISH → SVIŠ ✓"; klik je potvrđuje i upisuje u glosar. Ako treba
+  drugi zapis, ispravi prevod bloka: ručno izmenjen ili odobren zapis važi samo za taj natpis i ne traži potvrdu.
+- Produženje se prenosi sa originala: produžen samoglasnik produžava isti po redu samoglasnik zapisa, a produženo
+  poslednje slovo poslednje slovo zapisa (CRASHHH → KRAŠŠŠ).
+- Tab **„Nisu u glosaru"** pokazuje reči onomatopeja iz svih projekata kojih nema u glosaru, koliko puta se javljaju i
+  predlog po pravilu. Predlog se ispravi i doda dugmetom „Dodaj"; svaki sledeći broj onda prvo gleda glosar.
+- **„Onomatopeje po glosaru"** na strani projekta ponovo prevodi onomatopeje celog projekta po glosaru. Ručno
+  izmenjene i odobrene ostaju, a izmena se može vratiti istorijom stranice.
 
 ### 2.7 Izvoz albuma
 
