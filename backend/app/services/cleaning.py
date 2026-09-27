@@ -1,6 +1,8 @@
 """Čišćenje originalnog teksta (Faza 4a): tekst u oblačićima se prekriva bojom pozadine oblačića.
 
-Maska piksela teksta dolazi iz comic-text-detector-a (isti model kao za predloge onomatopeja).
+Slova u oblačiću su tamni delovi unutar okvira teksta koji ne dodiruju njegovu ivicu (ivica
+oblačića i rep je dodiruju), bez modela. Maska neobaveznog modela za tekst služi samo za
+onomatopeje preko crteža.
 Natpisi i onomatopeje preko crteža se ovde ne diraju: bela ispuna bi razmazala crtež
 (to radi inpainting u 4d).
 """
@@ -144,6 +146,38 @@ class CleanResult:
     inpainted: int = 0  # onomatopeje i natpisi obrisani preko crteža
 
 
+INK = 190  # tamnije od ovoga u oblačiću je slovo (i njegova siva ivica)
+INK_MARGIN = 0.06  # okvir se proširi za ovoliko (+4 px), da tesan okvir ne preseče slovo
+
+
+def ink_letters(image: np.ndarray, blocks: list[tuple[str, Box]]) -> np.ndarray:
+    """Slova oblačića bez modela: u okviru teksta (uz marginu) tamni delovi koji ne dodiruju ivicu
+    okvira i nisu skoro visoki kao okvir (ivica oblačića, rep, crtež koji ulazi u okvir).
+
+    Isto kao maska modela za tekst: na 30 strana ostaje isto mastila posle čišćenja.
+    """
+    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY) if image.ndim == 3 else image
+    height, width = gray.shape
+    letters = np.zeros((height, width), np.float32)
+    for kind, (x, y, w, h) in blocks:
+        if kind not in CLEAN_KINDS:
+            continue
+        mx, my = int(w * INK_MARGIN) + 4, int(h * INK_MARGIN) + 4
+        x0, y0 = max(int(x) - mx, 0), max(int(y) - my, 0)
+        x1, y1 = min(int(x + w) + mx, width), min(int(y + h) + my, height)
+        region = gray[y0:y1, x0:x1]
+        count, labels, stats, _ = cv2.connectedComponentsWithStats(
+            (region < INK).astype(np.uint8), connectivity=8
+        )
+        keep = np.zeros(count, bool)
+        for index in range(1, count):
+            cx, cy, cw, ch, _ = stats[index]
+            touches = cx == 0 or cy == 0 or cx + cw >= region.shape[1] or cy + ch >= region.shape[0]
+            keep[index] = not touches and ch < 0.9 * region.shape[0]
+        np.maximum(letters[y0:y1, x0:x1], keep[labels], out=letters[y0:y1, x0:x1])
+    return letters
+
+
 def clean_image(
     image: np.ndarray, blocks: list[tuple[str, Box]], probability: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray, CleanResult]:
@@ -221,8 +255,12 @@ def clean_page(session: Session, settings: Settings, page: Page) -> CleanResult:
     with Image.open(data_dir / page.image_path) as original:
         mode = "L" if original.mode in ("L", "1", "LA") else "RGB"  # crno-bele strane ostaju sive
         rgb = original.convert("RGB")
-    probability = text_mask(rgb, sfx_model_path(settings))
-    cleaned, covered, result = clean_image(np.asarray(rgb), blocks, probability)
+    pixels = np.asarray(rgb)
+    cleaned, covered, result = clean_image(pixels, blocks, ink_letters(pixels, blocks))
+    model = sfx_model_path(settings)  # neobavezan: bez njega maska onomatopeja je samo od mastila
+    probability = (
+        text_mask(rgb, model) if model.exists() else np.zeros(pixels.shape[:2], np.float32)
+    )
     original_gray = np.asarray(rgb.convert("L"))
     for block in page.blocks:
         if block.kind != "title":

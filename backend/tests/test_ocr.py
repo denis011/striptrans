@@ -168,3 +168,36 @@ def test_ocr_uses_language_of_the_series(make_client):
     client.post(f"/api/blocks/{block['id']}/ocr", json={"model": "qwen2.5vl:7b"})
 
     assert "in Serbian" in requests[0]["prompt"]
+
+
+def test_model_loops_are_cut_and_flagged():
+    from app.services.ocr import tame_repeats
+
+    assert tame_repeats("S" * 60) == ("SSSS", True)
+    assert tame_repeats("MA" * 30) == ("MAMAMA", True)
+    assert tame_repeats("O-" * 20) == ("O-O-O-", True)
+    for real in ("FFSSSSSSS", "AH AH AH!", "SVIIIŠŠŠ"):  # prave onomatopeje ostaju
+        assert tame_repeats(real) == (real, False)
+
+
+def test_styled_block_without_letters_is_empty():
+    from app.services.ocr import max_tokens_for, postprocess
+
+    assert postprocess("9772612543008", "sfx") == ("", False)  # bar-kod na naslovnoj
+    assert postprocess("---", "title") == ("", False)
+    assert postprocess("12", "speech") == ("12", False)  # u oblačiću broj ostaje
+    assert postprocess("```\nBANG!\n```", "sfx") == ("BANG!", False)
+    assert (max_tokens_for("sfx", 400), max_tokens_for("speech", 400)) == (60, 400)
+
+
+def test_sound_effect_loop_is_left_for_review(make_client):
+    requests = []
+    client = make_client(ocr_server(requests, response="TLEN" + "N" * 40))
+    page = create_page(client)
+    body = {"x": 10, "y": 10, "width": 100, "height": 40, "kind": "sfx"}
+    block = client.post(f"/api/pages/{page['id']}/blocks", json=body).json()
+
+    read = client.post(f"/api/blocks/{block['id']}/ocr", json={}).json()
+
+    assert (read["text"], read["needs_review"]) == ("TLENNNN", True)
+    assert requests[0]["max_tokens"] == 60

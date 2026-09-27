@@ -111,6 +111,35 @@ def needs_review(text: str) -> bool:
     return share > MAX_LOWERCASE_SHARE or non_latin or len(text) > 500
 
 
+# Petlje modela: u pravim onomatopejama (izmereno na ~150) isto slovo se ponavlja najviše ~7 puta, a
+# obrazac od više slova najviše ~2 puta; duže je model „zaglavio" („SSSSSS…", „MAMAMA…").
+LONG_RUN = re.compile(r"(.)\1{8,}")  # isti znak više od 8 puta → 4
+LONG_PATTERN = re.compile(
+    r"(..{1,3}?)\1{6,}"
+)  # obrazac od 2–4 znaka više od 6 puta → 3 ponavljanja
+STYLED_KINDS = {"sfx", "title", "other"}
+SFX_MAX_TOKENS = 60  # onomatopeja je kratka: dug odgovor je petlja ili izmišljen tekst
+
+
+def tame_repeats(text: str) -> tuple[str, bool]:
+    """Skrati ponavljanja kakva nastaju kad se model zaglavi; vraća i da li je nešto skraćeno."""
+    tamed = LONG_RUN.sub(lambda m: m.group(1) * 4, text)
+    tamed = LONG_PATTERN.sub(lambda m: m.group(1) * 3, tamed)
+    return tamed, tamed != text
+
+
+def postprocess(raw: str, kind: str) -> tuple[str, bool]:
+    """Tekst odgovora modela za blok; drugi deo kaže da je odgovor sumnjiv (skraćena petlja)."""
+    text, looped = tame_repeats(fix_punctuation(clean_output(raw)))
+    if kind in STYLED_KINDS and not any(char.isalpha() for char in text):
+        text = ""  # bar-kod, brojevi, crtice: lažna detekcija natpisa, a ne tekst
+    return uppercase_lettering(text), looped
+
+
+def max_tokens_for(kind: str, max_tokens: int) -> int:
+    return min(max_tokens, SFX_MAX_TOKENS) if kind == "sfx" else max_tokens
+
+
 def read_block(
     client: LlamaServerClient,
     image_path: Path,
@@ -121,11 +150,12 @@ def read_block(
 ) -> OcrResult:
     crop = crop_block(image_path, block.x, block.y, block.width, block.height)
     started = time.monotonic()
-    result = client.generate(prompt_for(language), model, max_tokens, images=[crop], temperature=0)
-    text = fix_punctuation(clean_output(result.response))
+    tokens = max_tokens_for(block.kind, max_tokens)
+    result = client.generate(prompt_for(language), model, tokens, images=[crop], temperature=0)
+    text, looped = postprocess(result.response, block.kind)
     return OcrResult(
-        text=uppercase_lettering(text),
+        text=text,
         model=model,
         seconds=round(time.monotonic() - started, 2),
-        needs_review=needs_review(text),
+        needs_review=looped or needs_review(text),
     )

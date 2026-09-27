@@ -1,6 +1,7 @@
-"""Brisanje teksta preko crteža (Faza 4d): onomatopeje i natpisi se brišu LaMa modelom za mangu.
+"""Brisanje teksta preko crteža (Faza 4d): onomatopeje i natpisi se brišu LaMa modelom.
 
-Model: ogkalu/lama-manga-onnx-dynamic (AnimeMangaInpainting, Apache-2.0), CPU, bilo koja veličina.
+Model: big-lama (advimman/lama, Apache-2.0; ONNX Carve/LaMa-ONNX), CPU, ulaz 512×512: isečak sa
+okolinom se svede na kvadrat 512 i vrati. U slepom poređenju bolji od ranijeg modela za mangu.
 Maska detektora teksta ne vidi četkom crtane onomatopeje (THUD) ni slova na teksturisanoj tabli,
 pa se dopunjuje debelim potezima „mastila" u okviru bloka (crno na belom ili belo na crnom).
 """
@@ -36,7 +37,7 @@ def _session(model_path: str) -> ort.InferenceSession:
 
 
 def model_path(models_dir: str) -> Path:
-    return Path(models_dir, "lama-manga", "lama-manga-dynamic.onnx")
+    return Path(models_dir, "big-lama", "big-lama-fp32.onnx")
 
 
 def normalized(text: str) -> str:
@@ -94,6 +95,9 @@ def text_angle(mask: np.ndarray) -> float:
     return float(round(angle, 1)) if abs(angle) <= 45 else 0.0
 
 
+SIZE = 512  # big-lama radi na kvadratu ove veličine
+
+
 def inpaint(image: np.ndarray, mask: np.ndarray, models_dir: str) -> np.ndarray:
     """Popuni masku (bool) crtežom; menja samo piksele pod maskom. `image` je RGB uint8."""
     path = model_path(models_dir)
@@ -108,24 +112,19 @@ def inpaint(image: np.ndarray, mask: np.ndarray, models_dir: str) -> np.ndarray:
     height, width = mask.shape
     x0, y0 = max(left - margin, 0), max(top - margin, 0)
     x1, y1 = min(right + margin, width), min(bottom + margin, height)
-    crop = image[y0:y1, x0:x1].astype(np.float32) / 255.0
-    hole = mask[y0:y1, x0:x1].astype(np.float32)
-    scale = min(1.0, MAX_SIDE / max(crop.shape[:2]))
-    if scale < 1:
-        size = (round(crop.shape[1] * scale), round(crop.shape[0] * scale))
-        crop = cv2.resize(crop, size, interpolation=cv2.INTER_AREA)
-        hole = (cv2.resize(hole, size, interpolation=cv2.INTER_NEAREST) > 0).astype(np.float32)
-    rows, cols = crop.shape[:2]
-    pad = ((0, (8 - rows % 8) % 8), (0, (8 - cols % 8) % 8))
-    inputs = {
-        "image": np.pad(crop, (*pad, (0, 0)), mode="reflect").transpose(2, 0, 1)[None],
-        "mask": np.pad(hole, pad)[None, None],
-    }
-    output = _session(str(path)).run(None, inputs)[0][0].transpose(1, 2, 0)[:rows, :cols]
-    filled = np.clip(output * 255, 0, 255).astype(np.uint8)
-    if scale < 1:
-        filled = cv2.resize(filled, (x1 - x0, y1 - y0), interpolation=cv2.INTER_CUBIC)
+    crop, hole = image[y0:y1, x0:x1], mask[y0:y1, x0:x1]
+    rows, cols = hole.shape
+    side = max(rows, cols)
+    square = np.pad(crop, ((0, side - rows), (0, side - cols), (0, 0)), mode="reflect")
+    square_hole = np.pad(hole, ((0, side - rows), (0, side - cols))).astype(np.uint8)
+    small = cv2.resize(square, (SIZE, SIZE), interpolation=cv2.INTER_AREA).astype(np.float32) / 255
+    small_hole = cv2.resize(square_hole, (SIZE, SIZE), interpolation=cv2.INTER_NEAREST)
+    small_hole = cv2.dilate(small_hole, np.ones((3, 3), np.uint8)).astype(np.float32)
+    inputs = {"image": small.transpose(2, 0, 1)[None], "mask": small_hole[None, None]}
+    output = _session(str(path)).run(None, inputs)[0][0].transpose(1, 2, 0)  # 0–255
+    filled = cv2.resize(
+        np.clip(output, 0, 255).astype(np.uint8), (side, side), interpolation=cv2.INTER_CUBIC
+    )
     result = image.copy()
-    region = mask[y0:y1, x0:x1]
-    result[y0:y1, x0:x1][region] = filled[region]
+    result[y0:y1, x0:x1][hole] = filled[:rows, :cols][hole]
     return result

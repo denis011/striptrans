@@ -65,8 +65,8 @@ SIL Open Font License 1.1 (tekst u `backend/app/fonts/licenses/`): anton, archiv
 | Model | Licenca | Namena |
 |---|---|---|
 | comic-text-and-bubble-detector (ogkalu) | Apache-2.0 | detekcija oblačića i teksta |
-| comic-text-detector (ONNX: mayocream) | ONNX označen Apache-2.0; izvorni projekat dmMaze/comic-text-detector je GPL-3.0 | maska teksta, predlozi onomatopeja |
-| lama-manga-onnx-dynamic (ogkalu) | ONNX označen Apache-2.0; izvor dmMaze/AnimeMangaInpainting bez navedene licence | brisanje teksta preko crteža |
+| big-lama (advimman/lama; ONNX Carve/LaMa-ONNX) | Apache-2.0 | brisanje teksta preko crteža |
+| comic-text-detector (ONNX: mayocream) — neobavezan, `make models-onomatopeje` | ONNX označen Apache-2.0; izvorni projekat dmMaze/comic-text-detector je GPL-3.0 | predlozi onomatopeja, maska onomatopeja preko crteža |
 | Qwen2.5-VL-7B-Instruct (Alibaba, GGUF ggml-org) | Apache-2.0 | OCR |
 | llama.cpp / llama-server | MIT | pokretanje OCR modela |
 

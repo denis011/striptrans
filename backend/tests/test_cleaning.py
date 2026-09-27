@@ -1,5 +1,6 @@
 import numpy as np
 from factories import create_page
+from PIL import Image
 
 from app.services import cleaning
 from app.services.cleaning import Stroke, apply_strokes, bubble_shape, clean_image, dark_background
@@ -76,6 +77,7 @@ def test_mask_outside_the_block_is_ignored():
 
 def test_clean_page_job_saves_image_and_mask(client, monkeypatch):
     monkeypatch.setattr(cleaning, "text_mask", lambda image, path: fake_mask(image))
+    monkeypatch.setattr(cleaning, "ink_letters", lambda image, blocks: fake_letters(image))
     page = create_page(client)
     block = {"x": 100, "y": 100, "width": 200, "height": 80, "text": "CIAO", "kind": "speech"}
     client.post(f"/api/pages/{page['id']}/blocks", json=block)
@@ -98,6 +100,7 @@ def test_block_that_ocr_never_read_is_not_erased(client, monkeypatch):
     from app.models import TextBlock
 
     monkeypatch.setattr(cleaning, "text_mask", lambda image, path: fake_mask(image))
+    monkeypatch.setattr(cleaning, "ink_letters", lambda image, blocks: fake_letters(image))
     page = create_page(client)
     block = {"x": 100, "y": 100, "width": 200, "height": 80, "kind": "speech"}
     created = client.post(f"/api/pages/{page['id']}/blocks", json=block).json()
@@ -116,6 +119,7 @@ def test_block_that_ocr_never_read_is_not_erased(client, monkeypatch):
 
 def test_clean_project_skips_pages_without_blocks(client, monkeypatch):
     monkeypatch.setattr(cleaning, "text_mask", lambda image, path: fake_mask(image))
+    monkeypatch.setattr(cleaning, "ink_letters", lambda image, blocks: fake_letters(image))
     create_page(client)
     project_id = client.get("/api/projects").json()[0]["id"]
 
@@ -129,6 +133,11 @@ def test_clean_project_skips_pages_without_blocks(client, monkeypatch):
         "pixels": 0,
         "inpainted": 0,
     }
+
+
+def fake_letters(image):
+    """Slova oblačića „nađena" bez modela (za poslove čišćenja na praznoj probnoj strani)."""
+    return fake_mask(Image.fromarray(image))
 
 
 def fake_mask(image):
@@ -221,6 +230,7 @@ def test_add_stroke_covers_with_surrounding_color_and_erase_restores():
 
 def test_mask_endpoint_updates_clean_image(client, monkeypatch):
     monkeypatch.setattr(cleaning, "text_mask", lambda image, path: fake_mask(image))
+    monkeypatch.setattr(cleaning, "ink_letters", lambda image, blocks: fake_letters(image))
     page = create_page(client)
     assert client.post(f"/api/pages/{page['id']}/mask", json={"strokes": []}).status_code == 422
 
@@ -239,3 +249,29 @@ def test_dark_background_under_title():
 
     assert dark_background(gray, (120, 10, 60, 60)) is True
     assert dark_background(gray, (10, 10, 60, 60)) is False
+
+
+def test_letters_in_a_balloon_are_found_without_a_model():
+    """Slova su tamni delovi unutar okvira koji ne dodiruju ivicu; ivica oblačića i rep ostaju."""
+    image, _ = bubble_page()
+    image[60:140, 60:62] = 0  # rep oblačića prolazi kroz okvir teksta (od ivice do ivice)
+
+    letters = cleaning.ink_letters(image, [("speech", (95, 85, 110, 30)), ("sfx", (0, 0, 50, 50))])
+
+    assert letters[100, 150] == 1  # tekst
+    assert letters[41, 150] == 0 and letters[100, 61] == 0  # ivica oblačića, rep
+    assert letters[:50, :50].sum() == 0  # onomatopeje se ovde ne traže
+
+
+def test_cleaning_works_without_the_optional_text_model(client, tmp_path):
+    """Bez neobaveznog modela za onomatopeje oblačići se čiste kao i inače (maska bez modela)."""
+    client.app.state.settings.models_dir = str(tmp_path / "prazno")
+    page = create_page(client)
+    body = {"x": 100, "y": 100, "width": 200, "height": 80, "text": "CIAO", "kind": "speech"}
+    client.post(f"/api/pages/{page['id']}/blocks", json=body)
+
+    job = client.post(f"/api/pages/{page['id']}/clean").json()
+    state = client.app.state
+    run_once(state.session_factory, "w1", state.settings)
+
+    assert client.get(f"/api/jobs/{job['id']}").json()["status"] == "done"

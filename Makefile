@@ -1,7 +1,7 @@
 DC := docker compose
 UIDGID := $(shell id -u):$(shell id -g)
 
-.PHONY: up down logs models llm-models llm notice public-release test test-backend test-frontend test-integration test-e2e lint format dev-setup dev-data
+.PHONY: up down logs models models-onomatopeje llm-models llm notice public-release test test-backend test-frontend test-integration test-e2e lint format dev-setup dev-data
 
 up: llm
 	$(DC) up -d --build --renew-anon-volumes --wait
@@ -14,6 +14,9 @@ logs:
 
 models:
 	@scripts/download-models.sh
+
+models-onomatopeje:  ## neobavezan model za onomatopeje (comic-text-detector, izvorno GPL-3.0; vidi UPUTSTVO)
+	@scripts/download-models.sh --onomatopeje
 
 llm:  ## pokreni llama-server (OCR) na Windows hostu ako ne radi
 	@scripts/ensure-llama-server.sh

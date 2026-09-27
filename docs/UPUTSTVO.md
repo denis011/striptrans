@@ -43,6 +43,10 @@ u PowerShell-u `ollama pull qwen2.5vl:7b`). Tačnost je skoro ista, a OCR je ~2�
 ništa podešavati: podrazumevano `OCR_SERVER=auto` u `.env` znači da `make up` pokrene llama-server ako je
 instaliran, a inače Ollamu, i da aplikacija koristi onaj koji odgovara (ako se ugasi usred rada, prelazi na drugi bez
 restarta). Izričit izbor: `OCR_SERVER=llama-server` ili `OCR_SERVER=ollama`. Status strana piše koji server radi.
+
+**Onomatopeje i natpisi su najteži za OCR** (stilizovana slova): ni jači modeli ih ne čitaju bitno bolje. Zato
+ih pregledaj u lekturi; blok na kome se model „zaglavio" (npr. „SSSSSS…") aplikacija skrati i označi za proveru,
+a natpis bez ijednog slova (bar-kod, brojevi) ostavi prazan.
 NVIDIA kartice: llama.cpp ima CUDA i Vulkan izdanja, a Ollama radi sa NVIDIA karticama; nije testirano.
 
 **Prelazak sa Ollame:** posle prvog `make up` sa llama-serverom isključi automatsko pokretanje Ollame (ikonica u
@@ -74,8 +78,19 @@ slati nikome i ne ide u git (`.env` je u `.gitignore`).
 make models
 ```
 
-Skripta preuzima tri ONNX modela (detektor oblačića, comic-text-detector, LaMa) u `models/` i proverava im SHA256.
-Ponovno pokretanje preskače ono što je već preuzeto.
+Skripta preuzima ONNX modele čiste licence (detektor oblačića i teksta, LaMa za brisanje preko crteža; oba
+Apache-2.0) u `models/` i proverava im SHA256. Ponovno pokretanje preskače ono što je već preuzeto.
+
+**Neobavezno, za onomatopeje:**
+
+```bash
+make models-onomatopeje
+```
+
+preuzima comic-text-detector: on predlaže okvire za onomatopeje koje detektor oblačića ne vidi i pomaže da se
+slova onomatopeje preko crteža obrišu cela. Njegov izvorni projekat je pod licencom GPL-3.0, pa ga preuzmi samo
+ako ti ta licenca odgovara. Bez njega aplikacija radi normalno, samo okvire onomatopeja crtaš ručno (N), a brisanje
+preko crteža se oslanja na poteze mastila (ponekad ostane deo slova — tada pomaže četkica).
 
 ### 1.5 Pokretanje
 
