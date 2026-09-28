@@ -26,6 +26,7 @@ import {
   deleteBlock,
   editMask,
   editPatchMask,
+  getAiPrompt,
   duplicateBlock,
   getJob,
   getPageReview,
@@ -56,7 +57,7 @@ import {
   updateSeries,
   uploadFont,
 } from "../api";
-import { Ban, Boxes, Brush, CaseSensitive, Check, ChevronLeft, ChevronRight, Download, Eraser, Eye, GalleryHorizontal, Image as ImageIcon, Languages, MousePointer2, PanelRight, Redo2, ScanText, Scissors, SquarePlus, Type, Undo2 } from "lucide-react";
+import { Ban, Boxes, Brush, CaseSensitive, Check, ChevronLeft, ChevronRight, Copy, Download, Eraser, Eye, GalleryHorizontal, Image as ImageIcon, Languages, MousePointer2, PanelRight, Redo2, ScanText, Scissors, SquarePlus, Type, Undo2 } from "lucide-react";
 import BlockPanel from "../components/BlockPanel";
 import type { SavedGlyph } from "../components/GlyphEditor";
 import Menu from "../components/Menu";
@@ -69,7 +70,7 @@ import PageCanvas, { type Fit } from "../components/PageCanvas";
 import { moveBlock, toggleSelection } from "../editor/blocks";
 import { importRanks } from "../pageOrder";
 import { loadSetting, saveSetting } from "../storage";
-import { nudgeForKey, positionForKey } from "../viewer/navigation";
+import { cropRect, fitInto, nudgeForKey, positionForKey } from "../viewer/navigation";
 import { patchAt } from "../viewer/patchHit";
 import type { FitMode } from "../viewer/zoom";
 
@@ -80,6 +81,18 @@ const FIT_BUTTONS: [FitMode, string, string][] = [
 ];
 
 type Mode = "select" | "draw" | "brush" | "text" | "patch";
+
+/** Mere slike iz fajla (za uklapanje zakrpe bez izobličenja); null ako pregledač ne može da je pročita. */
+async function imageSize(file: File): Promise<{ width: number; height: number } | null> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const size = { width: bitmap.width, height: bitmap.height };
+    bitmap.close();
+    return size;
+  } catch {
+    return null;
+  }
+}
 
 const NUDGE_SAVE_DELAY = 400; // ms bez strelice pre čuvanja pomeraja
 
@@ -227,7 +240,7 @@ export default function ViewerPage() {
     mutationFn: async () => {
       if (!page || !pageLettering) throw new Error("fontovi se još učitavaju");
       const blob = await renderPage({
-        imageUrl: page.cleaned_at ? pageCleanUrl(page) : pageImageUrl(page.id),
+        imageUrl: page.cleaned_at ? pageCleanUrl(page) : pageImageUrl(page.id, page.version),
         width: page.width,
         height: page.height,
         lettering: pageLettering,
@@ -238,10 +251,21 @@ export default function ViewerPage() {
     },
   });
   // isečak za doradu van aplikacije: izabran blok (sa malom marginom), inače cela stranica
-  const cropSource = blocks.find((block) => block.id === selectedIds[0]);
+  // (isti okvir, unutar stranice, dobija i zakrpa dodata dok je blok izabran)
+  const cropSource = selectedIds.length === 1 ? blocks.find((block) => block.id === selectedIds[0]) : undefined;
   const cropBox = cropSource
-    ? { x: cropSource.x - 10, y: cropSource.y - 10, width: cropSource.width + 20, height: cropSource.height + 20 }
+    ? cropRect(cropSource, { width: page?.width ?? 0, height: page?.height ?? 0 })
     : { x: 0, y: 0, width: page?.width ?? 0, height: page?.height ?? 0 };
+  const copyAiPrompt = async () => {
+    if (!cropSource) return;
+    try {
+      const { prompt } = await getAiPrompt(cropSource.id);
+      await navigator.clipboard.writeText(prompt);
+      setNote("Uputstvo za AI je kopirano: nalepi ga u AI aplikaciju uz izvezen isečak");
+    } catch (error) {
+      setNote(`Uputstvo nije kopirano: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
   const changeStyle = (id: number, changes: Partial<LetteringStyle> | null) => {
     const block = blocks.find((item) => item.id === id);
     if (!block) return;
@@ -335,7 +359,12 @@ export default function ViewerPage() {
   const stepHistory = useEffectEvent((kind: "undo" | "redo") => historyStep.mutate(kind));
   const deletePatchFromKey = useEffectEvent((id: number) => removePatch.mutate(id));
   const newPatch = useMutation({
-    mutationFn: (file: File) => addPatch(pageId, file),
+    // sa izabranim blokom zakrpa pada tačno na mesto izvezenog isečka, u boji stranice
+    mutationFn: async (file: File) => {
+      if (!cropSource) return addPatch(pageId, file);
+      const size = await imageSize(file);
+      return addPatch(pageId, file, size ? fitInto(cropBox, size) : cropBox, true);
+    },
     onSuccess: (patch) => {
       queryClient.setQueryData<Patch[]>(patchesKey, (old) => [...(old ?? []), patch]);
       refreshHistory();
@@ -618,7 +647,7 @@ export default function ViewerPage() {
   useEffect(() => {
     // susedne stranice se učitavaju unapred da prelazak bude bez čekanja
     for (const item of project.data?.pages ?? []) {
-      if (Math.abs(item.position - position) === 1) new Image().src = pageImageUrl(item.id);
+      if (Math.abs(item.position - position) === 1) new Image().src = pageImageUrl(item.id, item.version);
     }
     document.querySelector(".filmstrip .current")?.scrollIntoView?.({ block: "nearest", inline: "center" });
   }, [position, project.data]);
@@ -806,8 +835,15 @@ export default function ViewerPage() {
         )}
         {editPatches && (
           <div className="mode-tools">
-            <label className="button" title="Slika (PNG sa providnošću) preko stranice">
-              <ImageIcon size={16} aria-hidden /> Dodaj zakrpu…
+            <label
+              className="button"
+              title={
+                cropSource
+                  ? `Slika ide na mesto isečka bloka ${cropSource.position}, bez izobličenja i iznad teksta (siva na crno-beloj strani)`
+                  : "Slika (PNG sa providnošću) preko stranice; izaberi blok da padne na njegovo mesto"
+              }
+            >
+              <ImageIcon size={16} aria-hidden /> {cropSource ? `Zakrpa na blok ${cropSource.position}…` : "Dodaj zakrpu…"}
               <input
                 type="file"
                 accept="image/png,image/webp,image/jpeg"
@@ -827,6 +863,28 @@ export default function ViewerPage() {
             >
               <Scissors size={16} aria-hidden /> Izvezi isečak
             </a>
+            {cropSource && (
+              <a
+                className="button"
+                aria-label="Isečak originala za AI"
+                title="Isečak originala (sa italijanskim natpisom) za AI aplikaciju; uz njega ide uputstvo za AI"
+                href={pageCropUrl(pageId, cropBox, false)}
+                download
+              >
+                <Scissors size={16} aria-hidden /> Original za AI
+              </a>
+            )}
+            {cropSource && (
+              <button
+                type="button"
+                aria-label="Kopiraj uputstvo za AI"
+                disabled={!cropSource.translation}
+                title={cropSource.translation ? "Uputstvo za AI aplikaciju (pretplata): zameni natpis prevodom istim slovima" : "Blok nema prevod"}
+                onClick={copyAiPrompt}
+              >
+                <Copy size={16} aria-hidden /> Uputstvo za AI
+              </button>
+            )}
             {selectedPatch && (
               <>
                 <input
@@ -1049,7 +1107,7 @@ export default function ViewerPage() {
         <div className={`canvases${showReference ? " split" : ""}`}>
           <PageCanvas
             viewKey={page.id}
-            url={showClean && page.cleaned_at ? pageCleanUrl(page) : pageImageUrl(page.id)}
+            url={showClean && page.cleaned_at ? pageCleanUrl(page) : pageImageUrl(page.id, page.version)}
             lettering={lettering}
             editLettering={editLettering && !!lettering}
             onChangeLettering={changeStyle}
@@ -1074,7 +1132,7 @@ export default function ViewerPage() {
           />
           {showReference &&
             (reference ? (
-              <PageCanvas viewKey={reference.id} url={pageImageUrl(reference.id)} width={reference.width} height={reference.height} fit={fit} />
+              <PageCanvas viewKey={reference.id} url={pageImageUrl(reference.id, reference.version)} width={reference.width} height={reference.height} fit={fit} />
             ) : (
               <div className="page-canvas empty">Nema referentne stranice {position}</div>
             ))}
@@ -1118,7 +1176,7 @@ export default function ViewerPage() {
             aria-label={`Stranica ${item.position}${item.translation_reviewed ? " (lektorisana)" : ""}`}
             aria-current={item.position === position ? "page" : undefined}
           >
-            <img src={pageThumbnailUrl(item.id)} alt="" loading="lazy" />
+            <img src={pageThumbnailUrl(item.id, item.version)} alt="" loading="lazy" />
             <span className="page-number">{item.position}</span>
           </Link>
         ))}

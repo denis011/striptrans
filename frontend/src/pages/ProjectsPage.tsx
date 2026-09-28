@@ -118,7 +118,7 @@ export default function ProjectsPage() {
             <li key={project.id}>
               <Link to={`/projects/${project.id}`} className="project-card">
                 {project.cover_page_id ? (
-                  <img src={pageThumbnailUrl(project.cover_page_id)} alt="" />
+                  <img src={pageThumbnailUrl(project.cover_page_id, project.cover_version)} alt="" />
                 ) : (
                   <div className="no-cover" />
                 )}

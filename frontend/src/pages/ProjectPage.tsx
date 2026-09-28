@@ -341,7 +341,7 @@ export default function ProjectPage() {
           >
             <Link to={`/projects/${projectId}/pages/${page.position}`} draggable={false}>
               <img
-                src={pageThumbnailUrl(page.id)}
+                src={pageThumbnailUrl(page.id, page.version)}
                 alt={`Stranica ${page.position}`}
                 title={page.source_name}
                 loading="lazy"

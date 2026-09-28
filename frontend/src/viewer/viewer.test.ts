@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { moveItem, nudgeForKey, positionForKey } from "./navigation";
+import { cropRect, fitInto, moveItem, nudgeForKey, positionForKey } from "./navigation";
 import { MAX_SCALE, fitView, screenRect, zoomAt } from "./zoom";
 
 const page = { width: 1801, height: 2457 };
@@ -102,5 +102,21 @@ describe("nudgeForKey", () => {
     expect(nudgeForKey("ArrowLeft", false)).toEqual([-1, 0]);
     expect(nudgeForKey("ArrowDown", true)).toEqual([0, 10]);
     expect(nudgeForKey("PageDown", false)).toBeNull();
+  });
+});
+
+describe("cropRect", () => {
+  it("dodaje marginu od 10 px i ostaje unutar stranice", () => {
+    expect(cropRect({ x: 5, y: 100, width: 50, height: 20 }, { width: 60, height: 500 })).toEqual({ x: 0, y: 90, width: 60, height: 40 });
+  });
+});
+
+describe("fitInto", () => {
+  it("uklapa sliku u okvir bez izobličenja, na sredini", () => {
+    // Gemini: 1024 × 163 umesto isečka 1577 × 271 → iste širine, niža, centrirana po visini
+    const fitted = fitInto({ x: 127, y: 107, width: 1577, height: 271 }, { width: 1024, height: 163 });
+    expect(fitted.width).toBeCloseTo(1577);
+    expect(fitted.height).toBeCloseTo(251.0, 0);
+    expect(fitted.y).toBeCloseTo(107 + (271 - fitted.height) / 2);
   });
 });

@@ -325,6 +325,37 @@ describe("ViewerPage", () => {
     expect(JSON.parse(String(calls(fetchMock, "PATCH", "/api/blocks/101")[0][1]?.body))).toEqual({ translation: "HAJDEMO!", translation_note: "igra reči" });
   });
 
+  it("uz izabran blok kopira uputstvo za AI i zakrpu stavlja na mesto isečka", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const translated = { ...blocks[0], translation: "KRAŠ!" };
+    const fetchMock = renderEditor(1, {
+      "GET /api/pages/11/blocks": [translated, blocks[1]],
+      "GET /api/blocks/101/ai-prompt": { prompt: "Replace CRASH with KRAŠ" },
+      "POST /api/pages/11/patches": { id: 9, position: 1, x: 90, y: 90, width: 220, height: 100, rotation: 0, opacity: 1, above_text: false, url: "/api/patches/9/image" },
+    });
+    await userEvent.click(await screen.findByTestId("block-101"));
+    await userEvent.click(screen.getByRole("button", { name: "Zakrpe (P)" }));
+
+    await userEvent.click(screen.getByRole("button", { name: "Kopiraj uputstvo za AI" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("Replace CRASH with KRAŠ"));
+    expect(screen.getByRole("link", { name: "Isečak originala za AI" }).getAttribute("href")).toContain("clean=false");
+
+    const file = new File(["png"], "gemini.png", { type: "image/png" });
+    await userEvent.upload(screen.getByLabelText(/Zakrpa na blok 1/), file);
+    await waitFor(() => expect(calls(fetchMock, "POST", "/api/pages/11/patches")).toHaveLength(1));
+    const body = calls(fetchMock, "POST", "/api/pages/11/patches")[0][1]?.body as FormData;
+    // jsdom ne čita slike, pa zakrpa dobija ceo okvir isečka
+    expect([body.get("x"), body.get("y"), body.get("width"), body.get("height"), body.get("match_page"), body.get("above_text")]).toEqual([
+      "90",
+      "90",
+      "220",
+      "100",
+      "true",
+      "true",
+    ]);
+  });
+
   it("pravi nov blok iz nacrtanog pravougaonika", async () => {
     const created = { ...blocks[0], id: 103, position: 3 };
     const fetchMock = renderEditor(1, {

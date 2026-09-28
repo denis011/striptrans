@@ -53,11 +53,11 @@ everything else (artwork, lines, background) exactly as it is. The new lettering
 only the edited image with the same aspect ratio."""
 
 
-def build_prompt(block: TextBlock) -> str:
+def build_prompt(block: TextBlock, kind: str | None = None) -> str:
     target = " ".join(block.translation.split())
     letters = [char for char in target if char.isalpha()]
     return PROMPT.format(
-        what=KIND_NAMES[block.kind],
+        what=KIND_NAMES[kind or block.kind],
         source=flatten(block.text),
         target=target,
         count=len(letters),

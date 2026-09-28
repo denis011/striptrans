@@ -39,15 +39,20 @@ async def add_patch(
     y: Annotated[float | None, Form()] = None,
     width: Annotated[float | None, Form()] = None,
     height: Annotated[float | None, Form()] = None,
+    match_page: Annotated[bool, Form()] = False,
+    above_text: Annotated[bool, Form()] = False,
 ) -> PatchOut:
-    """Dodaj PNG (ili WebP/JPG) kao zakrpu preko stranice."""
+    """Dodaj PNG (ili WebP/JPG) kao zakrpu; uz `match_page` je siva na crno-beloj strani."""
     page = get_page(session, page_id)
     box = None
     if None not in (x, y, width, height):
         box = {"x": x, "y": y, "width": width, "height": height}
     history.record(session, page, "nova zakrpa")
     try:
-        patch = patches.add(session, Path(settings.data_dir), page, await file.read(), box)
+        data = await file.read()
+        patch = patches.add(
+            session, Path(settings.data_dir), page, data, box, match_page, above_text
+        )
     except patches.PatchRejected as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     session.commit()

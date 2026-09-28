@@ -246,7 +246,7 @@ button.small { padding: 1px 8px; font-size: 0.8rem; }
 .editor-header button:hover:not(:disabled) { background: rgb(255 255 255 / 0.08); }
 .editor-header button.active { background: var(--topbar-text); color: var(--topbar); border-color: var(--topbar-text); }
 .editor-header .icon-button[aria-pressed="true"] { background: rgb(255 255 255 / 0.14); color: #fff; }
-.tools { height: 42px; }
+.tools { height: 42px; overflow-x: auto; scrollbar-width: thin; }  /* uzak prozor: traka se pomera, ništa se ne gubi */
 .editor-header button, .tools button, .tools select, .tools .button { height: 30px; padding: 0 8px; font-size: 0.875rem; display: inline-flex; align-items: center; gap: 5px; }
 .tools select { padding: 0 6px; }
 .tools .icon-button { width: 30px; padding: 0; }
@@ -274,6 +274,7 @@ button.small { padding: 1px 8px; font-size: 0.8rem; }
 .menu-panel select { height: 30px; }
 .menu-panel .error { font-size: 0.8rem; }
 .tools .mode-tools { display: flex; align-items: center; gap: 6px; padding-left: 6px; border-left: 1px solid var(--border); }
+.tools .mode-tools .button, .tools .mode-tools button { white-space: nowrap; }
 .tools .error { font-size: 0.8rem; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* boja slova i obruba bloka */
 .color-controls { flex-basis: 100%; display: grid; gap: 4px; margin-top: 4px; }

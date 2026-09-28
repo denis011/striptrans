@@ -1,7 +1,10 @@
 import io
+from pathlib import Path
 
 from factories import create_page
 from PIL import Image
+
+from app.models import Page
 
 
 def png_bytes(size=(40, 30), color=(200, 30, 30, 255)) -> bytes:
@@ -147,4 +150,45 @@ def test_brush_follows_patch_rotation_and_undo_restores(client):
 
     client.post(f"/api/pages/{page['id']}/undo")
     [restored] = client.get(f"/api/pages/{page['id']}/patches").json()
-    assert restored["url"] == f"/api/patches/{patch['id']}/image"
+    assert restored["url"] == patch["url"]  # bez maske, ista slika kao pre poteza
+
+
+def test_patch_for_a_block_is_gray_on_a_gray_page(client, settings):
+    page = create_page(client)  # JPEG strana iz fabrike je u boji
+    data_dir = Path(settings.data_dir)
+    with client.app.state.session_factory() as session:
+        stored = session.get(Page, page["id"])
+        path = data_dir / stored.image_path
+        Image.open(path).convert("L").save(path, "JPEG")  # crno-bela strana
+    patch = upload(
+        client, page, x=10, y=20, width=100, height=50, match_page="true", above_text="true"
+    )
+
+    assert (patch["x"], patch["y"], patch["width"], patch["height"]) == (10, 20, 100, 50)
+    assert patch["above_text"] is True
+    with Image.open(io.BytesIO(client.get(patch["url"]).content)) as image:
+        assert image.mode == "LA"
+
+
+def test_ai_prompt_for_manual_work(client):
+    page = create_page(client)
+    block = client.post(
+        f"/api/pages/{page['id']}/blocks",
+        json={"x": 10, "y": 10, "width": 100, "height": 40, "text": "CRASH!"},
+    ).json()
+    assert client.get(f"/api/blocks/{block['id']}/ai-prompt").status_code == 400
+    client.patch(f"/api/blocks/{block['id']}", json={"kind": "sfx", "translation": "KRAŠ!"})
+
+    prompt = client.get(f"/api/blocks/{block['id']}/ai-prompt").json()["prompt"]
+
+    assert '"CRASH!"' in prompt and '"KRAŠ!"' in prompt and "K-R-A-Š" in prompt
+
+
+def test_new_patch_with_a_reused_id_gets_a_new_address(client):
+    page = create_page(client)
+    first = upload(client, page)
+    client.delete(f"/api/patches/{first['id']}")
+    second = upload(client, page, png_bytes(color=(0, 0, 255, 255)))
+
+    assert second["id"] == first["id"]  # SQLite ponovo dodeljuje broj obrisane zakrpe
+    assert second["url"] != first["url"]  # pa adresa zavisi od fajla, ne samo od broja

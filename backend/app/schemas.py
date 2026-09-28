@@ -66,6 +66,14 @@ class PageOut(BaseModel):
     ocr_reviewed: bool
     translation_reviewed: bool
     cleaned_at: datetime | None = None
+    image_path: str = Field(default="", exclude=True)
+
+    @computed_field
+    @property
+    def version(self) -> str:
+        """Oznaka fajla slike za adresu: slike se keširaju zauvek, a broj obrisane stranice
+        baza ponovo dodeljuje (novi projekat bi inače dobio stare slike iz keša)."""
+        return Path(self.image_path).stem[:12]
 
 
 class PagePatch(BaseModel):
@@ -133,6 +141,7 @@ class ProjectOut(BaseModel):
     page_count: int
     reference_page_count: int
     cover_page_id: int | None
+    cover_version: str = ""  # oznaka slike naslovne za adresu sličice (vidi PageOut.version)
 
 
 class ProjectProgress(BaseModel):
@@ -272,14 +281,18 @@ class PatchOut(BaseModel):
     rotation: float
     opacity: float
     above_text: bool
+    path: str = Field(default="", exclude=True)
     mask_path: str | None = Field(default=None, exclude=True)
 
     @computed_field
     @property
     def url(self) -> str:
-        # svaka izmena maske je nov fajl: nova adresa, pa keš pregledača ne vraća staru sliku
-        version = f"?v={Path(self.mask_path).stem}" if self.mask_path else ""
-        return f"/api/patches/{self.id}/image{version}"
+        # adresa sadrži fajl slike i maske: slika se kešira zauvek, a broj obrisane zakrpe
+        # baza ponovo dodeljuje, pa bi nova zakrpa inače dobila staru sliku iz keša
+        version = Path(self.path).stem
+        if self.mask_path:
+            version += f"-{Path(self.mask_path).stem}"
+        return f"/api/patches/{self.id}/image?v={version}"
 
 
 class PatchPatch(BaseModel):
@@ -317,6 +330,10 @@ class AiPatchRequest(BaseModel):
 
 class TranslateRequest(OcrRequest):
     shorter: bool = False
+
+
+class AiPromptOut(BaseModel):
+    prompt: str
 
 
 class PreviewRequest(OcrRequest):

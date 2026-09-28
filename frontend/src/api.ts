@@ -64,6 +64,7 @@ export interface Page {
   ocr_reviewed: boolean;
   translation_reviewed: boolean;
   cleaned_at?: string | null;
+  version?: string; // oznaka fajla slike: nova slika na istom broju stranice dobija novu adresu
 }
 
 export type BlockKind = "speech" | "thought" | "caption" | "sfx" | "other" | "title";
@@ -250,6 +251,7 @@ export interface ProjectSummary {
   page_count: number;
   reference_page_count: number;
   cover_page_id: number | null;
+  cover_version?: string;
 }
 
 /** Stanje koraka obrade; preskočene stranice (naslovna, reklame) se ne broje. */
@@ -470,6 +472,9 @@ export const applySfx = (projectId: number) => request<{ changed: number }>(`/ap
 export const listTranslationModels = () => request<OcrModels>("/api/translation/models");
 export const translateBlock = (id: number, model: string | undefined, shorter: boolean) =>
   request<TextBlock>(`/api/blocks/${id}/translate`, json("POST", { model, shorter }));
+/** Uputstvo za model za slike (isto kao AI prepravka), za ručni rad u AI aplikaciji. */
+export const getAiPrompt = (blockId: number) => request<{ prompt: string }>(`/api/blocks/${blockId}/ai-prompt`);
+
 /** Probni prevod bloka sa izabranim stilom (bez njega aktivni); ništa se ne upisuje. */
 export const previewTranslation = (id: number, styleId?: number) =>
   request<{ translation: string; note: string | null }>(`/api/blocks/${id}/translate/preview`, json("POST", { style_id: styleId }));
@@ -531,10 +536,11 @@ export const getRatingSummary = (study: string) => request<RatingSummary>(`/api/
 export const rateTranslation = (study: string, id: number, score: number) =>
   request<RatingCandidate>(`/api/ratings/${study}/${id}`, json("PUT", { score }));
 
-export const pageImageUrl = (id: number) => `/api/pages/${id}/image`;
+const versioned = (url: string, version?: string) => (version ? `${url}?v=${encodeURIComponent(version)}` : url);
+export const pageImageUrl = (id: number, version?: string) => versioned(`/api/pages/${id}/image`, version);
 // očišćena slika se menja pri svakom čišćenju, pa vreme čišćenja ide u URL (keš)
 export const pageCleanUrl = (page: Page) => `/api/pages/${page.id}/clean-image?v=${encodeURIComponent(page.cleaned_at ?? "")}`;
-export const pageThumbnailUrl = (id: number) => `/api/pages/${id}/thumbnail`;
+export const pageThumbnailUrl = (id: number, version?: string) => versioned(`/api/pages/${id}/thumbnail`, version);
 
 export function projectTitle(project: ProjectSummary): string {
   const issue = project.issue_number ? ` ${project.issue_number}` : "";
@@ -617,10 +623,16 @@ export interface Patch {
 export type PatchChanges = Partial<Omit<Patch, "id" | "url">>;
 
 export const listPatches = (pageId: number) => request<Patch[]>(`/api/pages/${pageId}/patches`);
-export function addPatch(pageId: number, file: File, box?: Rect): Promise<Patch> {
+/** Zakrpa preko stranice; uz `matchPage` je siva na crno-beloj strani (AI aplikacije vraćaju boju). */
+export function addPatch(pageId: number, file: File, box?: Rect, onBlock = false): Promise<Patch> {
   const body = new FormData();
   body.append("file", file, file.name);
   for (const [key, value] of Object.entries(box ?? {})) body.append(key, String(value));
+  // zakrpa na bloku: u boji stranice i iznad teksta, da je natpis samog bloka ne pokrije
+  if (onBlock) {
+    body.append("match_page", "true");
+    body.append("above_text", "true");
+  }
   return request<Patch>(`/api/pages/${pageId}/patches`, { method: "POST", body });
 }
 export const updatePatch = (id: number, changes: PatchChanges) =>

@@ -43,10 +43,28 @@ def _fit(width: float, height: float, page: Page) -> tuple[float, float, float, 
     return ((page.width - box[0]) / 2, (page.height - box[1]) / 2, box[0], box[1])
 
 
+def _grayscale_like_page(data_dir: Path, page: Page, data: bytes) -> bytes:
+    """Na crno-beloj strani slika postaje siva (sa providnošću): AI aplikacije vraćaju boju."""
+    with Image.open(data_dir / page.image_path) as original:
+        if original.mode not in ("L", "1", "LA"):
+            return data
+    with Image.open(io.BytesIO(data)) as image:
+        gray = image.convert("LA")
+    buffer = io.BytesIO()
+    gray.save(buffer, "PNG")
+    return buffer.getvalue()
+
+
 def add(
-    session: Session, data_dir: Path, page: Page, data: bytes, box: dict | None = None
+    session: Session,
+    data_dir: Path,
+    page: Page,
+    data: bytes,
+    box: dict | None = None,
+    match_page: bool = False,
+    above_text: bool = False,
 ) -> Patch:
-    """Snimi sliku i dodaj je kao zakrpu na vrh stranice."""
+    """Snimi sliku i dodaj je kao zakrpu na vrh stranice (uz `match_page` u boji stranice)."""
     if len(data) > MAX_BYTES:
         raise PatchRejected("slika je prevelika (najviše 25 MB)")
     try:
@@ -58,6 +76,10 @@ def add(
         raise PatchRejected("fajl nije slika") from exc
     if extension is None:
         raise PatchRejected("slika mora biti PNG, WebP ili JPG")
+    if match_page:
+        converted = _grayscale_like_page(data_dir, page, data)
+        if converted is not data:
+            data, extension = converted, ".png"
     relative = Path("projects", str(page.project_id), "patches", uuid.uuid4().hex + extension)
     target = data_dir / relative
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -72,6 +94,7 @@ def add(
         y=(box or {}).get("y", y),
         width=(box or {}).get("width", width),
         height=(box or {}).get("height", height),
+        above_text=above_text,
     )
     session.add(patch)
     session.flush()

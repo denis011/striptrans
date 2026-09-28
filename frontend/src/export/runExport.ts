@@ -48,7 +48,7 @@ export async function runExport({ exportJob, pages, series, fonts, onProgress, c
     });
     if (lettering.some((entry) => !entry.layout.fits)) progress.overflow.push(page.position);
     const image = await renderPage({
-      imageUrl: page.cleaned_at ? pageCleanUrl(page) : pageImageUrl(page.id),
+      imageUrl: page.cleaned_at ? pageCleanUrl(page) : pageImageUrl(page.id, page.version),
       width: page.width,
       height: page.height,
       lettering,

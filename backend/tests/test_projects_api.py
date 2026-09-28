@@ -257,3 +257,13 @@ def test_reshape_job_measures_bubble_shapes_again(client, monkeypatch):
     assert again != measured
     history = client.get(f"/api/pages/{page['id']}/history").json()
     assert history["undo"] == "ponovno merenje oblačića"
+
+
+def test_page_and_cover_carry_image_version(client):
+    from factories import create_page
+
+    page = create_page(client)
+    assert page["version"] and len(page["version"]) == 12
+    [project] = [p for p in client.get("/api/projects").json() if p["cover_page_id"] == page["id"]]
+    assert project["cover_version"] == page["version"]
+    assert "image_path" not in page

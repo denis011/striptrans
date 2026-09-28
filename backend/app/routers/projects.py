@@ -51,6 +51,7 @@ def _summary(project: Project) -> dict:
         "page_count": len(originals),
         "reference_page_count": len(project.pages) - len(originals),
         "cover_page_id": originals[0].id if originals else None,
+        "cover_version": Path(originals[0].image_path).stem[:12] if originals else "",
     }
 
 

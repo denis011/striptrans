@@ -36,3 +36,23 @@ export function nudgeForKey(key: string, shift: boolean): [number, number] | nul
   };
   return delta[key] ?? null;
 }
+
+const CROP_MARGIN = 10; // px stranice oko bloka za isečak (i zakrpu na njegovom mestu)
+
+/** Okvir isečka oko bloka, unutar stranice. */
+export function cropRect(block: { x: number; y: number; width: number; height: number }, page: { width: number; height: number }) {
+  const x = Math.max(0, Math.round(block.x - CROP_MARGIN));
+  const y = Math.max(0, Math.round(block.y - CROP_MARGIN));
+  const right = Math.min(page.width, Math.round(block.x + block.width + CROP_MARGIN));
+  const bottom = Math.min(page.height, Math.round(block.y + block.height + CROP_MARGIN));
+  return { x, y, width: right - x, height: bottom - y };
+}
+
+/** Slika uklopljena u okvir bez izobličenja, na sredini (AI aplikacije vraćaju drugu veličinu i odnos strana). */
+export function fitInto(box: { x: number; y: number; width: number; height: number }, image: { width: number; height: number }) {
+  if (image.width <= 0 || image.height <= 0) return box;
+  const scale = Math.min(box.width / image.width, box.height / image.height);
+  const width = image.width * scale;
+  const height = image.height * scale;
+  return { x: box.x + (box.width - width) / 2, y: box.y + (box.height - height) / 2, width, height };
+}

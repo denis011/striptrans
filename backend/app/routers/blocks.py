@@ -13,6 +13,7 @@ from app.models import Job, Page, TextBlock, TranslationStyle
 from app.routers.pages import get_page
 from app.schemas import (
     AiPatchRequest,
+    AiPromptOut,
     BlockIds,
     BlockIn,
     BlockOut,
@@ -385,6 +386,16 @@ def translate_block_request(
         return translate_block(session, block, model, shorter=bool(data and data.shorter))
     except (LlmError, TranslationFailed) as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+
+
+@router.get("/blocks/{block_id}/ai-prompt")
+def block_ai_prompt(block_id: int, session: SessionDep) -> AiPromptOut:
+    """Isto uputstvo koje ide modelu za slike, za ručni rad u AI aplikaciji (pretplata)."""
+    block = get_block(session, block_id)
+    if not block.translation.strip():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "blok nema prevod")
+    kind = block.kind if block.kind in ai_patch.AI_KINDS else "other"
+    return AiPromptOut(prompt=ai_patch.build_prompt(block, kind))
 
 
 @router.post("/blocks/{block_id}/translate/preview")

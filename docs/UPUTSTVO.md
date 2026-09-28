@@ -466,6 +466,20 @@ Otvara se dugmetom „Glosar" na strani projekta.
 - Odobren prevod bloka ulazi u memoriju prevoda: isti italijanski tekst na drugom mestu dobija isti prevod bez
   poziva modela.
 
+### 2.6c Natpisi preko AI aplikacije (pretplata, bez troška po slici)
+
+Umesto AI prepravke preko API-ja (0,03–0,07 $ po natpisu) natpis može da se uradi u AI aplikaciji koju već plaćaš
+(npr. Gemini):
+1. izaberi blok natpisa (naslov, natpis ili onomatopeju sa prevodom) i uključi režim **Zakrpe (P)**;
+2. **„Original za AI"** preuzme isečak originala (sa italijanskim natpisom, blok + 10 px);
+3. **„Uputstvo za AI"** kopira isto uputstvo koje aplikacija šalje modelu (stari natpis, prevod slovo po slovo, isti
+   stil i položaj); nalepi ga u AI aplikaciju uz isečak i sačuvaj sliku koju vrati;
+4. **„Zakrpa na blok N…"** doda tu sliku na mesto isečka. Slika se uklapa bez izobličenja (AI aplikacija često vrati
+   drugu veličinu i odnos strana), crta se **iznad teksta** (natpis samog bloka je ne pokriva), a na crno-beloj strani
+   postaje siva. Ivice doteraj četkicom „obriši zakrpu", ako je AI dirao crtež oko natpisa.
+   Ako se ispod zakrpe vidi zamućena podloga, to je očišćeni stari natpis: zakrpa ga ne pokriva cela (pomeri je ili
+   uvećaj) ili je blok i dalje složen preko nje (obriši mu prevod ili blok).
+
 ### 2.6b Stil prevoda (Podešavanja)
 
 Otvara se linkom **„Podešavanja"** u gornjem meniju.
