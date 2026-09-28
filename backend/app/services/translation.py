@@ -20,6 +20,8 @@ KIND_NAMES = {
     "title": "story title",
 }
 
+# Tehnički deo uputstva: ne menja se iz aplikacije, jer od njega zavise numeracija, kolone (‖),
+# naglasak (*…*), jezik i pismo. Stil prevoda je poseban tekst (DEFAULT_STYLE ili stil korisnika).
 INSTRUCTIONS = """You are a professional translator of Italian comics into Serbian.
 Translate every numbered text block of the page from Italian into Serbian.
 Rules:
@@ -31,21 +33,43 @@ Rules:
 - Never write Cyrillic: not a single letter, not a single word.
 - The marker in front of each block ([speech], [caption], [sound effect]...) tells you the kind
   of the block; never copy it into the translation and never translate it.
-- Natural, lively spoken Serbian as in published Serbian comic editions;
-  exclamations and curses must sound natural in Serbian, never word for word.
 - Keep each translation about as long as the original: it must fit the same balloon.
 - Use the glossary translations exactly for names, places and expressions.
-- Use the vocative case when a character is addressed (RAMONE!, MIĆO!, TODE!, ŠERIFE!).
 - The lettering writes accents as an apostrophe after the vowel: E' = È (is), SI' = SÌ (yes),
   PERCHE' = PERCHÉ, GIA' = GIÀ, PUO' = PUÒ; a real apostrophe stays inside words (L'UOMO, PO').
-- Keep short interjections such as AH! or UNGH! unchanged.
 - Words between asterisks (*ADESSO BASTA*) are emphasized (bold) in the original: put asterisks
   around the Serbian words that carry the same emphasis (*SAD JE DOSTA*), the same number of
   times; never add asterisks anywhere else.
 - Translate each block separately and keep the numbering; do not merge or split blocks.
 - The mark ‖ inside a block shows where the text continues in the next column or balloon:
   translate the whole block as one text and put exactly the same number of ‖ marks at the
-  corresponding places of the translation, so that each part fits its own column."""
+  corresponding places of the translation, so that each part fits its own column.
+- The translation goes into the balloon as it is: never add explanations or notes in brackets.
+  If a pun or a cultural reference cannot be carried over, explain it briefly in Serbian in
+  "note" (for the proofreader); otherwise leave "note" empty."""
+
+# Podrazumevani stil prevoda; menja se na strani Podešavanja (tamo je i povratak na ovaj)
+DEFAULT_STYLE = """- Natural, lively spoken Serbian as in the classic published Serbian comic
+  editions, never a literal, word-for-word translation: every line must sound natural and
+  dramatic read aloud.
+- Captions (narration): a narrative, slightly old-fashioned and atmospheric tone
+  (U MEĐUVREMENU..., DOK JE NOĆ PADALA NA ŠUMU...).
+- Dialogue: living spoken language that fits the character who speaks: comic characters are
+  comic, heroes calm and firm, bandits rough and coarse.
+- Be concise: if the original is long, shorten it and keep the meaning and the expressiveness.
+- Exclamations and curses as in classic comics, never word for word (STO MU GROMOVA!,
+  PROKLETSTVO!, GROM I PAKAO!, DO ĐAVOLA!).
+- Use the vocative case when a character is addressed (RAMONE!, MIĆO!, TODE!, ŠERIFE!).
+- Keep short interjections such as AH! or UNGH! unchanged."""
+
+
+@dataclass
+class Style:
+    """Stil prevoda: opšti tekst stila i uputstvo serijala (likovi, uzrečice), oba neobavezna."""
+
+    text: str = DEFAULT_STYLE
+    series_notes: str = ""
+
 
 SCHEMA = {
     "type": "object",
@@ -54,8 +78,12 @@ SCHEMA = {
             "type": "array",
             "items": {
                 "type": "object",
-                "properties": {"number": {"type": "integer"}, "text": {"type": "string"}},
-                "required": ["number", "text"],
+                "properties": {
+                    "number": {"type": "integer"},
+                    "text": {"type": "string"},
+                    "note": {"type": "string"},  # igra reči ili kulturna referenca, za lekturu
+                },
+                "required": ["number", "text", "note"],
                 "additionalProperties": False,
             },
         }
@@ -122,9 +150,18 @@ def relevant_glossary(glossary: Pairs, page_text: str) -> Pairs:
 
 
 def build_prompt(
-    blocks: list[SourceBlock], glossary: Pairs, context: Pairs, examples: Pairs
+    blocks: list[SourceBlock],
+    glossary: Pairs,
+    context: Pairs,
+    examples: Pairs,
+    style: Style | None = None,
 ) -> str:
+    style = style or Style()
     parts = [INSTRUCTIONS]
+    if style.text.strip():
+        parts.append("Translation style:\n" + style.text.strip())
+    if style.series_notes.strip():
+        parts.append("Notes for this comic series:\n" + style.series_notes.strip())
     if glossary:
         parts.append(
             "Glossary (Italian → Serbian):\n" + "\n".join(f"- {s} → {t}" for s, t in glossary)
@@ -144,7 +181,10 @@ def build_prompt(
     return "\n\n".join(parts)
 
 
-def parse_translations(response: str, numbers: set[int]) -> dict[int, str]:
+def parse_translations(
+    response: str, numbers: set[int], notes: dict[int, str] | None = None
+) -> dict[int, str]:
+    """Prevodi po broju bloka; napomene prevodioca (ako ih ima) idu u `notes`."""
     try:
         items = json.loads(response).get("translations", [])
     except (ValueError, AttributeError):
@@ -158,6 +198,9 @@ def parse_translations(response: str, numbers: set[int]) -> dict[int, str]:
         text = serbian_forms(to_latin(lettering(BLOCK_MARKER.sub("", str(item.get("text", ""))))))
         if number in numbers and text and number not in result:
             result[number] = text
+            note = " ".join(str(item.get("note") or "").split())
+            if notes is not None and note:
+                notes[number] = to_latin(note)
     return result
 
 
@@ -195,18 +238,24 @@ def translate_blocks(
     glossary: Pairs,
     context: Pairs,
     examples: Pairs,
+    style: Style | None = None,
+    notes: dict[int, str] | None = None,
 ) -> dict[int, str]:
-    """Cela stranica jednim zahtevom; blok koji model preskoči prevodi se posebno."""
+    """Cela stranica jednim zahtevom; blok koji model preskoči prevodi se posebno.
+
+    Napomene prevodioca (igra reči, kulturna referenca) se upisuju u `notes`, ako je dat.
+    """
     page_glossary = relevant_glossary(glossary, " ".join(block.text for block in blocks))
-    prompt = build_prompt(blocks, page_glossary, context, examples)
-    translations = parse_translations(_generate(model, prompt), {b.number for b in blocks})
+    prompt = build_prompt(blocks, page_glossary, context, examples, style)
+    numbers = {b.number for b in blocks}
+    translations = parse_translations(_generate(model, prompt), numbers, notes)
     for block in blocks:
         # dugačak blok uz pun prompt ume da ostane prazan, pa je drugi pokušaj bez primera
         for extra in ((context, examples), ([], [])):
             if block.number in translations:
                 break
-            single = build_prompt([block], page_glossary, *extra)
-            translations.update(parse_translations(_generate(model, single), {block.number}))
+            single = build_prompt([block], page_glossary, *extra, style)
+            translations.update(parse_translations(_generate(model, single), {block.number}, notes))
     return {
         block.number: keep_emphasis(block.text, translations[block.number])
         for block in blocks
@@ -214,8 +263,10 @@ def translate_blocks(
     }
 
 
-def shorten(model: str, block: SourceBlock, current: str, glossary: Pairs) -> str | None:
-    prompt = build_prompt([block], relevant_glossary(glossary, block.text), [], []) + (
+def shorten(
+    model: str, block: SourceBlock, current: str, glossary: Pairs, style: Style | None = None
+) -> str | None:
+    prompt = build_prompt([block], relevant_glossary(glossary, block.text), [], [], style) + (
         f"\n\nThe current translation is too long for the balloon: {current}\n"
         f"Give a shorter translation with the same meaning, "
         f"at most {len(block.text)} characters."

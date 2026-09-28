@@ -22,6 +22,7 @@ from app.routers import (
     review,
     series,
     sfx,
+    styles,
 )
 from app.services.llamaserver import ocr_client
 
@@ -53,6 +54,7 @@ def create_app(
     app.include_router(patches.router)
     app.include_router(glossary.router)
     app.include_router(sfx.router)
+    app.include_router(styles.router)
     app.include_router(ratings.router)
     app.include_router(review.router)
     app.include_router(fonts.router)

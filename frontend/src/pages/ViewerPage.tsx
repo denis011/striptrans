@@ -13,6 +13,8 @@ import {
   type TextBlock,
   addDictionaryWord,
   createSfx,
+  listStyles,
+  previewTranslation,
   addPatch,
   autoOrderBlocks,
   cancelJob,
@@ -408,6 +410,7 @@ export default function ViewerPage() {
     mutationFn: (word: string) => addDictionaryWord(project.data?.series.id ?? 0, word),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["review"] }),
   });
+  const translationStyles = useQuery({ queryKey: ["translation-styles"], queryFn: listStyles });
   const confirmSfx = useMutation({
     mutationFn: ({ source, target }: { source: string; target: string }) => createSfx({ source, target }),
     onSuccess: () => {
@@ -1093,6 +1096,8 @@ export default function ViewerPage() {
             reviews={reviews}
             onAddWord={(word) => addWord.mutate(word)}
             onConfirmSfx={(source, target) => confirmSfx.mutate({ source, target })}
+            translationStyles={translationStyles.data ?? []}
+            onPreview={(id, styleId) => previewTranslation(id, styleId)}
             onStyle={changeStyle}
             fonts={fontList}
             fits={overflows}

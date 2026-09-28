@@ -199,6 +199,20 @@ table.glossary input, table.glossary select { width: 100%; box-sizing: border-bo
 table.glossary tr.suggested { background: var(--suggested); }
 .tabs .filter { margin-left: auto; }
 .row-actions { white-space: nowrap; }
+.styles-layout { display: grid; grid-template-columns: 220px 1fr; gap: 16px; align-items: start; }
+@media (max-width: 700px) { .styles-layout { grid-template-columns: 1fr; } }
+.style-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.style-list button[aria-pressed] { width: 100%; text-align: left; }
+.style-list button[aria-pressed="true"] { border-color: var(--accent); font-weight: 600; }
+.new-style { display: flex; gap: 6px; }
+.new-style input { flex: 1; min-width: 0; }
+.style-editor { display: grid; gap: 10px; }
+.style-editor label { display: grid; gap: 4px; }
+.style-editor textarea, .series-notes textarea { width: 100%; box-sizing: border-box; font: inherit; }
+.series-notes { display: grid; gap: 8px; }
+.translation-note { font-size: 0.8rem; color: var(--muted); margin: 4px 0 0; }
+.preview { display: grid; gap: 6px; margin-top: 6px; padding: 6px; border: 1px dashed var(--border); border-radius: 4px; }
+.preview .toolbar-group { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .block-list label.continues { display: flex; gap: 6px; align-items: center; font-size: 0.8rem; color: var(--muted); margin-top: 4px; }
 .block-list label.continues select { flex: 1; min-width: 0; }
 .suggest { flex-wrap: wrap; gap: 12px; }

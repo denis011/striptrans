@@ -27,6 +27,8 @@ class Series(Base):
     sfx_font: Mapped[str | None] = mapped_column(String(100))
     # naracija ukošena (kao u srpskim izdanjima); naglašen tekst je uvek podebljan i ukošen
     caption_italic: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # uputstvo za prevod ovog serijala (likovi, uzrečice, ton); dodaje se na aktivni stil prevoda
+    translation_notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
@@ -150,6 +152,8 @@ class TextBlock(Base):
     # none | draft (prevod modela) | edited (ispravio korisnik) | approved (lektorisano)
     translation_status: Mapped[str] = mapped_column(String(20), default="none")
     translation_too_long: Mapped[bool] = mapped_column(default=False)
+    # napomena prevodioca (igra reči, kulturna referenca): samo za lekturu, ne ulazi u oblačić
+    translation_note: Mapped[str | None] = mapped_column(Text)
     # ručne korekcije slaganja (veličina, pomeraj, rotacija...); None = sve automatski
     style: Mapped[dict | None] = mapped_column(JSON)
     # nagib originalne onomatopeje/natpisa (stepeni), procenjen pri čišćenju
@@ -221,6 +225,23 @@ class SfxEntry(Base):
     source: Mapped[str] = mapped_column(String(200), unique=True)
     target: Mapped[str] = mapped_column(String(200))
     note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class TranslationStyle(Base):
+    """Sačuvan stil prevoda (Podešavanja); tačno jedan je aktivan.
+
+    Ugrađeni stil bez teksta koristi podrazumevani stil iz koda (`translation.DEFAULT_STYLE`).
+    """
+
+    __tablename__ = "translation_styles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True)
+    text: Mapped[str | None] = mapped_column(Text)
+    builtin: Mapped[bool] = mapped_column(default=False)
+    active: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 

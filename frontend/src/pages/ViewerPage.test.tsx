@@ -305,6 +305,26 @@ describe("ViewerPage", () => {
     expect(screen.getByLabelText("Nastavak bloka 1")).toHaveValue("102");
   });
 
+  it("probni prevod izabranim stilom se prikazuje i upisuje tek na Primeni", async () => {
+    const fetchMock = renderEditor(1, {
+      "GET /api/translation-styles": [{ id: 2, name: "Moderni", text: "- SLENG.", builtin: false, active: false, changed: false }],
+      "POST /api/blocks/101/translate/preview": { translation: "HAJDEMO!", note: "igra reči" },
+      "PATCH /api/blocks/101": blocks[0],
+    });
+    await userEvent.click(await screen.findByTestId("block-101"));
+    await userEvent.selectOptions(await screen.findByLabelText("Stil probnog prevoda bloka 1"), "2");
+    await userEvent.click(screen.getByRole("button", { name: "Probni prevod" }));
+
+    expect(await screen.findByLabelText("Probni prevod bloka 1")).toHaveTextContent("HAJDEMO!");
+    expect(screen.getByText("napomena prevodioca: igra reči")).toBeInTheDocument();
+    expect(JSON.parse(String(calls(fetchMock, "POST", "/api/blocks/101/translate/preview")[0][1]?.body))).toEqual({ style_id: 2 });
+    expect(calls(fetchMock, "PATCH", "/api/blocks/101")).toHaveLength(0);
+
+    await userEvent.click(screen.getByRole("button", { name: "Primeni" }));
+    await waitFor(() => expect(calls(fetchMock, "PATCH", "/api/blocks/101")).toHaveLength(1));
+    expect(JSON.parse(String(calls(fetchMock, "PATCH", "/api/blocks/101")[0][1]?.body))).toEqual({ translation: "HAJDEMO!", translation_note: "igra reči" });
+  });
+
   it("pravi nov blok iz nacrtanog pravougaonika", async () => {
     const created = { ...blocks[0], id: 103, position: 3 };
     const fetchMock = renderEditor(1, {

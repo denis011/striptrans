@@ -38,6 +38,7 @@ export interface Series {
   dialogue_font?: string | null;
   sfx_font?: string | null;
   caption_italic?: boolean; // naracija ukošena (kao u srpskim izdanjima)
+  translation_notes?: string | null; // uputstvo za prevod serijala (likovi, uzrečice)
 }
 
 export interface FontInfo {
@@ -90,6 +91,7 @@ export interface TextBlock extends Rect {
   translation_model: string | null;
   translation_status: TranslationStatus;
   translation_too_long: boolean;
+  translation_note?: string | null; // napomena prevodioca (igra reči): samo za lekturu, ne ide u oblačić
   style?: LetteringStyle | null;
   angle?: number | null; // nagib originalne onomatopeje (stepeni)
   dark_background?: boolean | null; // tamna podloga posle čišćenja: prevod se slaže svetlim slovima
@@ -215,6 +217,7 @@ export type TranslationStatus = "none" | "draft" | "edited" | "approved";
 
 export type BlockChanges = Partial<Rect> & {
   kind?: BlockKind;
+  translation_note?: string | null;
   continues_id?: number | null;
   text?: string;
   needs_review?: boolean;
@@ -300,7 +303,10 @@ export const getHealth = () => request<Health>("/api/health");
 export const runLlm = (prompt: string) => request<LlmResult>("/api/debug/llm", json("POST", { prompt }));
 
 export const listSeries = () => request<Series[]>("/api/series");
-export const updateSeries = (id: number, changes: { dialogue_font?: string | null; sfx_font?: string | null; caption_italic?: boolean }) =>
+export const updateSeries = (
+  id: number,
+  changes: { dialogue_font?: string | null; sfx_font?: string | null; caption_italic?: boolean; translation_notes?: string | null },
+) =>
   request<Series>(`/api/series/${id}`, json("PATCH", changes));
 export const listFonts = () => request<FontInfo[]>("/api/fonts");
 export function uploadFont(file: File, kind: "dialogue" | "sfx") {
@@ -464,6 +470,28 @@ export const applySfx = (projectId: number) => request<{ changed: number }>(`/ap
 export const listTranslationModels = () => request<OcrModels>("/api/translation/models");
 export const translateBlock = (id: number, model: string | undefined, shorter: boolean) =>
   request<TextBlock>(`/api/blocks/${id}/translate`, json("POST", { model, shorter }));
+/** Probni prevod bloka sa izabranim stilom (bez njega aktivni); ništa se ne upisuje. */
+export const previewTranslation = (id: number, styleId?: number) =>
+  request<{ translation: string; note: string | null }>(`/api/blocks/${id}/translate/preview`, json("POST", { style_id: styleId }));
+
+/** Sačuvan stil prevoda (Podešavanja); jedan je aktivan. Ugrađeni se ne briše, a može da se vrati na podrazumevani. */
+export interface TranslationStyle {
+  id: number;
+  name: string;
+  text: string;
+  builtin: boolean;
+  active: boolean;
+  changed: boolean;
+}
+
+export const listStyles = () => request<TranslationStyle[]>("/api/translation-styles");
+export const createStyle = (style: { name: string; text: string }) => request<TranslationStyle>("/api/translation-styles", json("POST", style));
+export const updateStyle = (id: number, changes: { name?: string; text?: string }) =>
+  request<TranslationStyle>(`/api/translation-styles/${id}`, json("PATCH", changes));
+export const activateStyle = (id: number) => request<TranslationStyle>(`/api/translation-styles/${id}/activate`, { method: "POST" });
+export const resetStyle = (id: number) => request<TranslationStyle>(`/api/translation-styles/${id}/reset`, { method: "POST" });
+export const deleteStyle = (id: number) => request<void>(`/api/translation-styles/${id}`, { method: "DELETE" });
+
 export const translatePage = (pageId: number, model?: string) =>
   request<Job>(`/api/pages/${pageId}/translate`, json("POST", { model }));
 export const prepareProject = (projectId: number, ocrModel: string | undefined, translationModel: string | undefined) =>

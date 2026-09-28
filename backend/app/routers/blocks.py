@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.deps import LlamaDep, SessionDep, SettingsDep
-from app.models import Job, Page, TextBlock
+from app.models import Job, Page, TextBlock, TranslationStyle
 from app.routers.pages import get_page
 from app.schemas import (
     AiPatchRequest,
@@ -20,6 +20,8 @@ from app.schemas import (
     JobOut,
     OcrRequest,
     PatchOut,
+    PreviewOut,
+    PreviewRequest,
     ProcessRequest,
     TranslateRequest,
 )
@@ -28,7 +30,12 @@ from app.services.glossary_suggest import flatten
 from app.services.llm_base import LlmError
 from app.services.ocr import read_block
 from app.services.page_processing import PageImage, page_panels
-from app.services.page_translation import TranslationFailed, remember, translate_block
+from app.services.page_translation import (
+    TranslationFailed,
+    preview_block,
+    remember,
+    translate_block,
+)
 from app.services.panels import order_by_panels
 from app.services.translation import is_too_long
 
@@ -378,6 +385,24 @@ def translate_block_request(
         return translate_block(session, block, model, shorter=bool(data and data.shorter))
     except (LlmError, TranslationFailed) as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+
+
+@router.post("/blocks/{block_id}/translate/preview")
+def preview_block_translation(
+    block_id: int, session: SessionDep, settings: SettingsDep, data: PreviewRequest | None = None
+) -> PreviewOut:
+    """Probni prevod bloka sa izabranim (ili aktivnim) stilom; ništa se ne upisuje."""
+    block = get_block(session, block_id)
+    if not block.text.strip():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "blok nema tekst za prevod")
+    model = (data.model if data else None) or settings.translation_model
+    if data and data.style_id and session.get(TranslationStyle, data.style_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "stil ne postoji")
+    try:
+        text, note = preview_block(session, block, model, data.style_id if data else None)
+    except (LlmError, TranslationFailed) as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+    return PreviewOut(translation=text, note=note)
 
 
 @router.post("/pages/{page_id}/translate", status_code=status.HTTP_202_ACCEPTED)

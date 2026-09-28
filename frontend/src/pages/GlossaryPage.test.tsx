@@ -93,4 +93,14 @@ describe("GlossaryPage", () => {
     expect(await screen.findByText("Predlozi za glosar: završeno")).toBeInTheDocument();
     expect(body(fetchMock, "POST", "/api/series/1/glossary/suggest")).toEqual({ project_id: 1, reference_project_id: 3 });
   });
+
+  it("čuva uputstvo za prevod serijala", async () => {
+    const fetchMock = renderGlossary({ "PATCH /api/series/1": { ...ramon, translation_notes: "Glavni lik je odmeren." } });
+    const notes = await screen.findByLabelText("Uputstvo za prevod serijala");
+
+    await userEvent.type(notes, "Glavni lik je odmeren.");
+    await userEvent.click(screen.getByRole("button", { name: "Sačuvaj uputstvo" }));
+
+    await waitFor(() => expect(body(fetchMock, "PATCH", "/api/series/1")).toEqual({ translation_notes: "Glavni lik je odmeren." }));
+  });
 });

@@ -9,6 +9,7 @@ import {
   type TextBlock,
   type TitleGlyph,
   type TranslationStatus,
+  type TranslationStyle,
   titleGlyphUrl,
 } from "../api";
 import { BLOCK_KINDS, kindColor } from "../editor/blocks";
@@ -32,6 +33,8 @@ interface Props {
   reviews?: Record<number, BlockReview>;
   onAddWord?: (word: string) => void;
   onConfirmSfx?: (source: string, target: string) => void;
+  translationStyles?: TranslationStyle[];
+  onPreview?: (id: number, styleId?: number) => Promise<{ translation: string; note: string | null }>;
   onStyle?: (id: number, changes: Partial<LetteringStyle> | null) => void;
   fonts?: FontInfo[];
   fits?: Record<number, { line: number; extra: number } | null>; // blokovi čiji tekst ne staje
@@ -494,6 +497,67 @@ function Warnings({
   );
 }
 
+/** Probni prevod bloka izabranim stilom: prikazuje se pored postojećeg i upisuje tek na „Primeni". */
+function TranslationPreview({
+  block,
+  styles,
+  onPreview,
+  onApply,
+}: {
+  block: TextBlock;
+  styles: TranslationStyle[];
+  onPreview: (id: number, styleId?: number) => Promise<{ translation: string; note: string | null }>;
+  onApply: (translation: string, note: string | null) => void;
+}) {
+  const [styleId, setStyleId] = useState<number | undefined>(undefined);
+  const [result, setResult] = useState<{ translation: string; note: string | null } | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      setResult(await onPreview(block.id, styleId));
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="preview" onClick={(event) => event.stopPropagation()}>
+      <div className="toolbar-group">
+        <select aria-label={`Stil probnog prevoda bloka ${block.position}`} value={styleId ?? ""} onChange={(event) => setStyleId(event.target.value ? Number(event.target.value) : undefined)}>
+          <option value="">aktivni stil</option>
+          {styles.map((style) => (
+            <option key={style.id} value={style.id}>
+              {style.name}
+            </option>
+          ))}
+        </select>
+        <button type="button" className="small" disabled={busy} onClick={run}>
+          {busy ? "Prevodim…" : "Probni prevod"}
+        </button>
+      </div>
+      {error && <span className="error">{error}</span>}
+      {result && (
+        <>
+          <p aria-label={`Probni prevod bloka ${block.position}`}>{result.translation}</p>
+          {result.note && <p className="translation-note">napomena prevodioca: {result.note}</p>}
+          <div className="toolbar-group">
+            <button type="button" className="small" onClick={() => onApply(result.translation, result.note)}>
+              Primeni
+            </button>
+            <button type="button" className="small" onClick={() => setResult(null)}>
+              Odbaci
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 const TRANSLATION_STATUS: Record<TranslationStatus, string> = {
   none: "bez prevoda",
   draft: "nacrt",
@@ -568,6 +632,8 @@ export default function BlockPanel({
   reviews,
   onAddWord,
   onConfirmSfx,
+  translationStyles = [],
+  onPreview,
   onStyle,
   fonts = [],
   fits,
@@ -663,6 +729,19 @@ export default function BlockPanel({
               </span>
             </div>
             <TranslationText key={`prevod:${block.id}:${block.translation}`} block={block} onSave={(translation) => onUpdate(block.id, { translation })} />
+            {block.translation_note && (
+              <p className="translation-note" title="Napomena prevodioca: samo za lekturu, ne ulazi u oblačić">
+                napomena prevodioca: {block.translation_note}
+              </p>
+            )}
+            {selected && onPreview && block.text.trim() && block.kind !== "sfx" && (
+              <TranslationPreview
+                block={block}
+                styles={translationStyles}
+                onPreview={onPreview}
+                onApply={(translation, note) => onUpdate(block.id, { translation, translation_note: note })}
+              />
+            )}
             <Warnings review={reviews?.[block.id]} onAddWord={onAddWord} onConfirmSfx={onConfirmSfx} />
             {(selected || block.continues_id) && (
               <label className="continues" onClick={(event) => event.stopPropagation()}>

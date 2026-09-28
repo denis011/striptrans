@@ -34,6 +34,7 @@ FIELDS = (
     "translation_model",
     "translation_status",
     "translation_too_long",
+    "translation_note",
     "style",
     "angle",
     "dark_background",
@@ -217,7 +218,7 @@ def _restore(session: Session, page: Page, blocks: list[dict], data_dir: Path | 
             session.add(block)
         for field in FIELDS:
             if field != "continues_id":
-                setattr(block, field, entry[field])
+                setattr(block, field, entry.get(field))  # stariji koraci nemaju nova polja
     session.flush()
     for entry in blocks:  # veze tek kad svi blokovi postoje; stariji koraci istorije ih nemaju
         existing.get(entry["id"], session.get(TextBlock, entry["id"])).continues_id = entry.get(

@@ -24,12 +24,14 @@ class SeriesOut(SeriesIn):
     dialogue_font: str | None = None
     sfx_font: str | None = None
     caption_italic: bool = False
+    translation_notes: str | None = None  # uputstvo za prevod serijala (likovi, uzrečice)
 
 
 class SeriesPatch(BaseModel):
     dialogue_font: str | None = Field(default=None, max_length=100)
     sfx_font: str | None = Field(default=None, max_length=100)
     caption_italic: bool | None = None  # naracija ukošena
+    translation_notes: str | None = Field(default=None, max_length=20000)
 
 
 class FontOut(BaseModel):
@@ -221,6 +223,7 @@ class BlockPatch(BaseModel):
     needs_review: bool | None = None
     translation: str | None = None
     translation_status: TranslationStatus | None = None
+    translation_note: str | None = None  # napomena prevodioca; "" je briše
     style: LetteringStyle | None = None  # null vraća automatsko slaganje
     continues_id: int | None = None  # blok u kom se tekst nastavlja; null raskida vezu
 
@@ -247,6 +250,7 @@ class BlockOut(BaseModel):
     translation_model: str | None
     translation_status: TranslationStatus
     translation_too_long: bool
+    translation_note: str | None = None
     style: LetteringStyle | None = None
     angle: float | None = None
     dark_background: bool | None = None
@@ -313,6 +317,36 @@ class AiPatchRequest(BaseModel):
 
 class TranslateRequest(OcrRequest):
     shorter: bool = False
+
+
+class PreviewRequest(OcrRequest):
+    style_id: int | None = None  # stil za probu; bez njega aktivni stil
+
+
+class PreviewOut(BaseModel):
+    translation: str
+    note: str | None = None
+
+
+class StyleIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    text: str = Field(max_length=20000)
+
+
+class StylePatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    text: str | None = Field(default=None, max_length=20000)
+
+
+class StyleOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    text: str  # ugrađeni stil bez izmena vraća podrazumevani tekst iz koda
+    builtin: bool
+    active: bool
+    changed: bool = False  # ugrađeni stil je izmenjen (ima smisla „Vrati podrazumevano")
 
 
 class ProcessRequest(OcrRequest):

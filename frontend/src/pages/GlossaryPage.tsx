@@ -14,8 +14,32 @@ import {
   projectTitle,
   suggestGlossary,
   updateGlossaryEntry,
+  updateSeries,
 } from "../api";
 import JobStatus, { isActiveJob } from "../components/JobStatus";
+
+/** Uputstvo za prevod serijala (likovi, uzrečice, ton): dodaje se na aktivni stil prevoda. */
+function SeriesNotes({ seriesId, notes, onSaved }: { seriesId: number; notes: string; onSaved: () => void }) {
+  const [text, setText] = useState(notes);
+  const save = useMutation({ mutationFn: () => updateSeries(seriesId, { translation_notes: text }), onSuccess: onSaved });
+  return (
+    <div className="series-notes">
+      <textarea
+        aria-label="Uputstvo za prevod serijala"
+        rows={8}
+        placeholder="Npr. ko od likova je komičan, ko odmeren; omiljene uzrečice i kletve serijala; kako se zovu mesta."
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+      />
+      <div className="toolbar-group">
+        <button type="button" disabled={text === notes || save.isPending} onClick={() => save.mutate()}>
+          Sačuvaj uputstvo
+        </button>
+        {save.isError && <span className="error">{save.error.message}</span>}
+      </div>
+    </div>
+  );
+}
 
 const KINDS: [GlossaryKind, string][] = [
   ["name", "Ime"],
@@ -128,13 +152,26 @@ export default function GlossaryPage() {
   const visible = all
     .filter((entry) => entry.status === tab && (!needle || entry.source.includes(needle) || entry.target.includes(needle)))
     .sort((a, b) => (tab === "suggested" ? b.occurrences - a.occurrences : 0));
-  const seriesName = series.data?.find((item) => item.id === seriesId)?.name ?? "";
+  const currentSeries = series.data?.find((item) => item.id === seriesId);
+  const seriesName = currentSeries?.name ?? "";
 
   return (
     <main className="container wide">
       <div className="page-header">
         <h1>Glosar — {seriesName}</h1>
       </div>
+      {currentSeries && (
+        <section>
+          <h2>Uputstvo za prevod serijala</h2>
+          <p className="detail">Dodaje se na aktivni stil prevoda (Podešavanja) pri svakom prevodu ovog serijala.</p>
+          <SeriesNotes
+            key={currentSeries.translation_notes ?? ""}
+            seriesId={seriesId}
+            notes={currentSeries.translation_notes ?? ""}
+            onSaved={() => queryClient.invalidateQueries({ queryKey: ["series"] })}
+          />
+        </section>
+      )}
       <section>
         <h2>Nova stavka</h2>
         <form

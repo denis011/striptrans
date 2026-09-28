@@ -466,6 +466,24 @@ Otvara se dugmetom „Glosar" na strani projekta.
 - Odobren prevod bloka ulazi u memoriju prevoda: isti italijanski tekst na drugom mestu dobija isti prevod bez
   poziva modela.
 
+### 2.6b Stil prevoda (Podešavanja)
+
+Otvara se linkom **„Podešavanja"** u gornjem meniju.
+- **Stil prevoda** opisuje kako prevod treba da zvuči: ton naracije, govor likova, kletve i uzvici, koliko skraćivati.
+  Može se sačuvati više stilova (npr. „Klasični", „Moderni"); **jedan je aktivan** i njega koristi svaki sledeći prevod
+  (stranica, projekat, blok, „Kraće"). „Koristi ovaj stil" menja aktivni stil.
+- Ugrađeni stil **„Podrazumevani"** može da se menja, a **„Vrati podrazumevano"** vraća tekst aplikacije. Nov stil
+  („Dodaj") počinje kao kopija izabranog. Ostali stilovi se brišu dugmetom „Obriši stil".
+- Pravila od kojih zavisi rad aplikacije (numeracija blokova, kolone, naglasak, latinica, srpski ekavski) su fiksna i
+  nisu u stilu.
+- **Uputstvo za prevod serijala** (na strani Glosar serijala): likovi (ko je komičan, ko odmeren), uzrečice i kletve
+  serijala. Dodaje se na aktivni stil pri svakom prevodu tog serijala.
+- **Napomena prevodioca:** kad igra reči ili kulturna referenca ne može da se prenese, model je objasni u napomeni
+  ispod prevoda u panelu bloka. Napomena je samo za lekturu i ne ulazi u oblačić ni u izvoz.
+- **Probni prevod** (panel izabranog bloka): izaberi stil i klikni „Probni prevod". Prevod se prikaže ispod
+  postojećeg, a upisuje se tek na „Primeni" („Odbaci" ga uklanja). Za deo teksta u više kolona prevodi se ceo lanac, a
+  prikazuje deo ovog bloka.
+
 ### 2.6a Glosar onomatopeja
 
 Otvara se linkom „Onomatopeje" u gornjem meniju ili dugmetom „Glosar onomatopeja" u koraku Prevedi. Zajednički je za

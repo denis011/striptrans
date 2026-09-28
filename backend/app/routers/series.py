@@ -29,13 +29,15 @@ def create_series(data: SeriesIn, session: SessionDep) -> SeriesOut:
 
 @router.patch("/{series_id}")
 def update_series(series_id: int, data: SeriesPatch, session: SessionDep) -> SeriesOut:
-    """Podrazumevani fontovi serijala (za govor i za onomatopeje) i ukošena naracija."""
+    """Podrazumevani fontovi serijala, ukošena naracija i uputstvo za prevod serijala."""
     series = session.get(Series, series_id)
     if series is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "serijal ne postoji")
     changes = data.model_dump(exclude_unset=True)
     if changes.pop("caption_italic", None) is not None:
         series.caption_italic = bool(data.caption_italic)
+    if "translation_notes" in changes:
+        series.translation_notes = (changes.pop("translation_notes") or "").strip() or None
     for field, key in changes.items():
         if key is not None and not font_exists(session, key):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f'font „{key}" ne postoji')
