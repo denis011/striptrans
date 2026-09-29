@@ -13,11 +13,11 @@ services:
   api:
     <<: *dev-backend
     ports: !override
-      - "8001:8000"
+      - "127.0.0.1:8001:8000"
   worker:
     <<: *dev-backend
   frontend:
     environment:
       VITE_APP_ENV: DEV  # crveni okvir i natpis „DEV" na svakoj strani (App.tsx)
     ports: !override
-      - "5174:5173"
+      - "127.0.0.1:5174:5173"

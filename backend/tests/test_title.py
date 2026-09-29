@@ -535,3 +535,18 @@ def test_changing_letter_font_cuts_a_new_version(client):
     assert same["title"]["version"] == changed["title"]["version"]  # font se nije menjao
     k = next(g for g in changed["title"]["extra"] if g["char"] == "K")
     assert k["font"] == "Anton" and "Anton" in changed["title"]["fonts"]
+
+
+def test_glyph_keys_and_paths_stay_inside_the_data_folder(tmp_path):
+    from app.paths import UnsafePath, inside
+    from app.services.title import GLYPH_KEY
+
+    assert all(GLYPH_KEY.fullmatch(key) for key in ("g0", "x12", "c3f"))
+    assert not any(GLYPH_KEY.fullmatch(key) for key in ("../x", "g0/../../a", "c", "g0.png"))
+    assert inside(tmp_path, "projects", 7) == tmp_path / "projects" / "7"
+    for bad in (("..", "etc"), ("projects", "../../etc")):
+        try:
+            inside(tmp_path, *bad)
+        except UnsafePath:
+            continue
+        raise AssertionError(f"{bad} je prošlo")

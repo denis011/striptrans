@@ -8,6 +8,7 @@ slova originala (S → Š).
 """
 
 import io
+import re
 import shutil
 import uuid
 import zlib
@@ -22,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import object_session
 
 from app.models import Font, TextBlock
+from app.paths import inside
 from app.services.geometry import Box
 
 FONT_DIR = Path(__file__).resolve().parent.parent / "fonts"
@@ -1414,17 +1416,23 @@ def _entries(title: dict) -> list[dict]:
 
 def glyph_file(data_dir: Path, block: TextBlock, key: str) -> Path | None:
     """Slika jednog slova naslova (ključ iz opisa: g0… original, x0… dopunjeno, c0… sastavljeno)."""
+    if not GLYPH_KEY.fullmatch(key):
+        return None
     entries = {entry["key"]: entry for entry in _entries(block.title)} if block.title else {}
     base = key[:-1] if key.endswith("f") else key  # g3f: ispuna slova g3
     if base not in entries or (base != key and not entries[base].get("fill")):
         return None
     folder = title_dir(data_dir, block.page.project_id, block.id) / block.title["version"]
-    path = folder / f"{key}.png"
+    path = inside(folder, f"{key}.png")
     return path if path.exists() else None
 
 
 class GlyphError(ValueError):
     """Neispravno slovo sastavljeno od delova."""
+
+
+# oznaka slova u adresi: g0… original, x0… dopunjeno, c0… sastavljeno; „f" na kraju je ispuna
+GLYPH_KEY = re.compile(r"[gxc]\d{1,4}f?")
 
 
 MAX_GLYPH = 2000  # px, najveća slika sastavljenog slova
@@ -1472,7 +1480,7 @@ def save_custom(
             raise GlyphError("ispuna mora biti iste veličine kao slovo")
     custom = [dict(entry) for entry in block.title.get("custom", [])]
     keys = [entry["key"] for entry in custom]
-    if key is not None and key not in keys:
+    if key is not None and (key not in keys or not GLYPH_KEY.fullmatch(key)):
         raise GlyphError("sastavljeno slovo ne postoji")
     if key is None:
         key = f"c{max((int(k[1:]) for k in keys), default=-1) + 1}"
@@ -1480,8 +1488,8 @@ def save_custom(
         char, alpha, float(baseline), float(cols[0]), float(cols[-1] + 1), "custom", fill=fill_alpha
     )
     folder = title_dir(data_dir, block.page.project_id, block.id) / block.title["version"]
-    (folder / f"{key}f.png").unlink(missing_ok=True)
-    _png(glyph, block.title["ink"], folder / f"{key}.png", block.title.get("paper"))
+    inside(folder, f"{key}f.png").unlink(missing_ok=True)
+    _png(glyph, block.title["ink"], inside(folder, f"{key}.png"), block.title.get("paper"))
     entry = {
         "key": key,
         "char": char,
@@ -1503,9 +1511,10 @@ def save_custom(
 
 def remove_custom(block: TextBlock, data_dir: Path, key: str) -> None:
     custom = [entry for entry in (block.title or {}).get("custom", []) if entry["key"] != key]
-    if not block.title or len(custom) == len(block.title.get("custom", [])):
+    missing = not block.title or len(custom) == len(block.title.get("custom", []))
+    if missing or not GLYPH_KEY.fullmatch(key):
         raise GlyphError("sastavljeno slovo ne postoji")
     folder = title_dir(data_dir, block.page.project_id, block.id) / block.title["version"]
-    (folder / f"{key}.png").unlink(missing_ok=True)
-    (folder / f"{key}f.png").unlink(missing_ok=True)
+    inside(folder, f"{key}.png").unlink(missing_ok=True)
+    inside(folder, f"{key}f.png").unlink(missing_ok=True)
     block.title = {**block.title, "custom": custom}

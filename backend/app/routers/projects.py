@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.deps import SessionDep, SettingsDep
 from app.models import Export, Job, Page, Project, Series, TextBlock
+from app.paths import inside
 from app.schemas import (
     ActiveJobOut,
     JobOut,
@@ -189,9 +190,10 @@ def delete_project(project_id: int, session: SessionDep, settings: SettingsDep) 
     exports = session.scalars(select(Export.id).where(Export.project_id == project_id)).all()
     session.delete(project)
     session.commit()
-    shutil.rmtree(Path(settings.data_dir, "projects", str(project_id)), ignore_errors=True)
+    data_dir = Path(settings.data_dir)
+    shutil.rmtree(inside(data_dir, "projects", project_id), ignore_errors=True)
     for export_id in exports:  # izvozi su van foldera projekta
-        shutil.rmtree(Path(settings.data_dir, "exports", str(export_id)), ignore_errors=True)
+        shutil.rmtree(inside(data_dir, "exports", export_id), ignore_errors=True)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

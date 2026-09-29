@@ -67,6 +67,8 @@ aplikaciji opisuje [docs/UPUTSTVO.md](docs/UPUTSTVO.md).
   izdanja podležu autorskim pravima njihovih vlasnika; za to je odgovoran korisnik.
 - StripTrans nije povezan ni sa jednim izdavačem stripova.
 - Tekst za prevod ide na OpenRouter (i do izabranog modela); sve ostalo radi lokalno.
+- **Aplikacija nema prijavu i namenjena je samo za tvoj računar.** Portovi su vezani za `127.0.0.1`
+  (http://localhost:5173); ne izlaži je mreži ni internetu.
 
 ## Licenca
 
@@ -94,6 +96,8 @@ llama.cpp or with Ollama, untested), llama-server or Ollama, and an OpenRouter a
 [docs/UPUTSTVO.md](docs/UPUTSTVO.md).
 
 **Only translate comics you own, for personal use.** StripTrans is not affiliated with any comic publisher.
+The app has no login and is meant for your own computer only: ports are bound to `127.0.0.1`; do not expose it to a
+network.
 
 License: [PolyForm Noncommercial 1.0.0](LICENSE.md) — free for noncommercial use; commercial use requires the
 author's permission. Third-party components: [NOTICE.md](NOTICE.md). Pull requests are not accepted for now.

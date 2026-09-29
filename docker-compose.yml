@@ -20,7 +20,7 @@ services:
     <<: *backend
     command: uvicorn --factory app.main:create_app --host 0.0.0.0 --port 8000 --reload
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"  # samo ovaj računar: aplikacija nema prijavu
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/ping', timeout=2)"]
       interval: 5s
@@ -43,7 +43,7 @@ services:
       - ./frontend:/app
       - /app/node_modules
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     depends_on:
       - api
     restart: unless-stopped
