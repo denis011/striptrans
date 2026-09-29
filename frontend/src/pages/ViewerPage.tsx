@@ -57,7 +57,7 @@ import {
   updateSeries,
   uploadFont,
 } from "../api";
-import { Ban, Boxes, Brush, CaseSensitive, Check, ChevronLeft, ChevronRight, Copy, Download, Eraser, Eye, GalleryHorizontal, Image as ImageIcon, Languages, MousePointer2, PanelRight, Redo2, ScanText, Scissors, SquarePlus, Type, Undo2 } from "lucide-react";
+import { Ban, Boxes, Brush, CaseSensitive, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, Download, Eraser, Eye, GalleryHorizontal, Image as ImageIcon, Languages, MousePointer2, PanelRight, Redo2, ScanText, Scissors, SquarePlus, Type, Undo2 } from "lucide-react";
 import BlockPanel from "../components/BlockPanel";
 import type { SavedGlyph } from "../components/GlyphEditor";
 import Menu from "../components/Menu";
@@ -94,7 +94,26 @@ async function imageSize(file: File): Promise<{ width: number; height: number } 
   }
 }
 
-const NUDGE_SAVE_DELAY = 400; // ms bez strelice pre čuvanja pomeraja
+const NUDGE_SAVE_DELAY = 400;
+const AI_APP_URL = "https://gemini.google.com/app"; // AI aplikacija za ručni tok (pretplata korisnika)
+const AI_TAB_KEY = "striptrans.aiTabOpened"; // Gemini je u ovoj sesiji već otvoren iz editora
+
+function aiTabOpened(): boolean {
+  try {
+    return sessionStorage.getItem(AI_TAB_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function openAiApp() {
+  window.open(AI_APP_URL, "_blank");
+  try {
+    sessionStorage.setItem(AI_TAB_KEY, "1");
+  } catch {
+    // bez sessionStorage-a Gemini se otvara pri svakoj pripremi
+  }
+} // ms bez strelice pre čuvanja pomeraja
 
 const MODES = [
   { value: "select", label: "Izbor", short: "Izbor", Icon: MousePointer2 },
@@ -261,10 +280,36 @@ export default function ViewerPage() {
     try {
       const { prompt } = await getAiPrompt(cropSource.id);
       await navigator.clipboard.writeText(prompt);
-      setNote("Uputstvo za AI je kopirano: nalepi ga u AI aplikaciju uz izvezen isečak");
+      setNote("Uputstvo je kopirano: nalepi ga u AI aplikaciju (Ctrl+V), a sliku koju vrati kopiraj i nalepi ovde (Ctrl+V)");
     } catch (error) {
       setNote(`Uputstvo nije kopirano: ${error instanceof Error ? error.message : String(error)}`);
     }
+  };
+  // ručni AI tok bez fajlova: isečak originala ide u clipboard (Ctrl+V u AI aplikaciji), a slika koju
+  // aplikacija vrati se lepi u editor (Ctrl+V) i postaje zakrpa na izabranom bloku
+  const prepareForAi = async () => {
+    if (!cropSource) return;
+    const url = pageCropUrl(pageId, cropBox, false);
+    try {
+      // Promise<Blob> čuva dozvolu klika dok se isečak preuzima (Safari i Chrome)
+      const png = fetch(url).then((response) => response.blob());
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+      setNote(
+        aiTabOpened()
+          ? "Isečak je kopiran: pređi na Gemini tab (Ctrl+Tab), Ctrl+V, pa „Uputstvo za AI“ i još jednom Ctrl+V"
+          : "Isečak je kopiran: u Gemini-ju Ctrl+V, pa „Uputstvo za AI“ i još jednom Ctrl+V",
+      );
+    } catch {
+      // pregledač bez slike u clipboard-u: isečak se preuzima kao fajl
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `isecak-blok-${cropSource.position}.png`;
+      link.click();
+      setNote("Isečak je preuzet kao fajl (pregledač ne dozvoljava sliku u clipboard-u)");
+    }
+    // Gemini prekida vezu sa tabom koji ga otvori (Cross-Origin-Opener-Policy), pa ga aplikacija ne može
+    // pronaći ni prebaciti u prvi plan: otvara se samo prvi put u sesiji, dalje ga korisnik bira sam
+    if (!aiTabOpened()) openAiApp();
   };
   const changeStyle = (id: number, changes: Partial<LetteringStyle> | null) => {
     const block = blocks.find((item) => item.id === id);
@@ -561,6 +606,20 @@ export default function ViewerPage() {
     return true;
   });
   useEffect(() => () => saveNudge(), [pageId]);
+
+  // slika nalepljena u editor (Ctrl+V) postaje zakrpa: na izabranom bloku ide na njegovo mesto
+  const pasteImage = useEffectEvent((event: ClipboardEvent) => {
+    if (isTyping(event.target)) return;
+    const file = [...(event.clipboardData?.files ?? [])].find((item) => item.type.startsWith("image/"));
+    if (!file) return;
+    event.preventDefault();
+    newPatch.mutate(file);
+  });
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => pasteImage(event);
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -864,15 +923,18 @@ export default function ViewerPage() {
               <Scissors size={16} aria-hidden /> Izvezi isečak
             </a>
             {cropSource && (
-              <a
-                className="button"
-                aria-label="Isečak originala za AI"
-                title="Isečak originala (sa italijanskim natpisom) za AI aplikaciju; uz njega ide uputstvo za AI"
-                href={pageCropUrl(pageId, cropBox, false)}
-                download
+              <>
+              <button
+                type="button"
+                title="Kopira isečak originala (sa italijanskim natpisom); prvi put otvara i Gemini. Tamo Ctrl+V, pa „Uputstvo za AI“"
+                onClick={prepareForAi}
               >
-                <Scissors size={16} aria-hidden /> Original za AI
-              </a>
+                <Scissors size={16} aria-hidden /> Pripremi za AI
+              </button>
+              <button type="button" className="icon-button" aria-label="Otvori Gemini" title="Otvori Gemini u novom tabu (ako si ga zatvorio)" onClick={openAiApp}>
+                <ExternalLink size={16} aria-hidden />
+              </button>
+              </>
             )}
             {cropSource && (
               <button

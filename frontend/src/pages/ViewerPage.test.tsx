@@ -332,35 +332,50 @@ describe("ViewerPage", () => {
     expect(JSON.parse(String(calls(fetchMock, "PATCH", "/api/blocks/101")[0][1]?.body))).toEqual({ translation: "HAJDEMO!", translation_note: "igra reči" });
   });
 
-  it("uz izabran blok kopira uputstvo za AI i zakrpu stavlja na mesto isečka", async () => {
+  it("ručni AI tok: isečak i uputstvo u clipboard, nalepljena slika postaje zakrpa na bloku", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const write = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText, write }, configurable: true });
+    vi.stubGlobal("ClipboardItem", class {
+      constructor(public items: Record<string, unknown>) {}
+    });
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    sessionStorage.clear();
     const translated = { ...blocks[0], translation: "KRAŠ!" };
     const fetchMock = renderEditor(1, {
       "GET /api/pages/11/blocks": [translated, blocks[1]],
       "GET /api/blocks/101/ai-prompt": { prompt: "Replace CRASH with KRAŠ" },
-      "POST /api/pages/11/patches": { id: 9, position: 1, x: 90, y: 90, width: 220, height: 100, rotation: 0, opacity: 1, above_text: false, url: "/api/patches/9/image" },
+      "/api/pages/11/crop?x=90&y=90&width=220&height=100&clean=false": {},
+      "POST /api/pages/11/patches": { id: 9, position: 1, x: 90, y: 90, width: 220, height: 100, rotation: 0, opacity: 1, above_text: true, url: "/api/patches/9/image?v=a" },
     });
     await userEvent.click(await screen.findByTestId("block-101"));
     await userEvent.click(screen.getByRole("button", { name: "Zakrpe (P)" }));
 
+    await userEvent.click(screen.getByRole("button", { name: "Pripremi za AI" }));
+    await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
+    expect(Object.keys(write.mock.calls[0][0][0].items)).toEqual(["image/png"]);
+    expect(open).toHaveBeenCalledWith("https://gemini.google.com/app", "_blank");
+    // drugi put se Gemini ne otvara ponovo (tab je već otvoren; aplikacija ne može da ga prebaci)
+    await userEvent.click(screen.getByRole("button", { name: "Pripremi za AI" }));
+    await waitFor(() => expect(write).toHaveBeenCalledTimes(2));
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/pređi na Gemini tab/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Otvori Gemini" }));
+    expect(open).toHaveBeenCalledTimes(2);
+
     await userEvent.click(screen.getByRole("button", { name: "Kopiraj uputstvo za AI" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("Replace CRASH with KRAŠ"));
-    expect(screen.getByRole("link", { name: "Isečak originala za AI" }).getAttribute("href")).toContain("clean=false");
 
-    const file = new File(["png"], "gemini.png", { type: "image/png" });
-    await userEvent.upload(screen.getByLabelText(/Zakrpa na blok 1/), file);
+    // slika iz AI aplikacije nalepljena u editor (Ctrl+V)
+    const image = new File(["png"], "image.png", { type: "image/png" });
+    const paste = new Event("paste", { bubbles: true, cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(paste, "clipboardData", { value: { files: [image] } });
+    window.dispatchEvent(paste);
+
     await waitFor(() => expect(calls(fetchMock, "POST", "/api/pages/11/patches")).toHaveLength(1));
     const body = calls(fetchMock, "POST", "/api/pages/11/patches")[0][1]?.body as FormData;
-    // jsdom ne čita slike, pa zakrpa dobija ceo okvir isečka
-    expect([body.get("x"), body.get("y"), body.get("width"), body.get("height"), body.get("match_page"), body.get("above_text")]).toEqual([
-      "90",
-      "90",
-      "220",
-      "100",
-      "true",
-      "true",
-    ]);
+    expect([body.get("x"), body.get("y"), body.get("width"), body.get("height"), body.get("above_text")]).toEqual(["90", "90", "220", "100", "true"]);
+    open.mockRestore();
   });
 
   it("blok izabran na slici se sam prikaže u panelu, a izbor u panelu ne pomera listu", async () => {

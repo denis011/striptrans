@@ -469,17 +469,24 @@ Otvara se dugmetom „Glosar" na strani projekta.
 
 ### 2.6c Natpisi preko AI aplikacije (pretplata, bez troška po slici)
 
-Umesto AI prepravke preko API-ja (0,03–0,07 $ po natpisu) natpis može da se uradi u AI aplikaciji koju već plaćaš
-(npr. Gemini):
+Umesto AI prepravke preko API-ja (0,03–0,07 $ po natpisu; besplatne kvote za modele za slike nema ni na Google AI
+Studio-u) natpis može da se uradi u AI aplikaciji koju već plaćaš (Gemini), bez čuvanja fajlova:
 1. izaberi blok natpisa (naslov, natpis ili onomatopeju sa prevodom) i uključi režim **Zakrpe (P)**;
-2. **„Original za AI"** preuzme isečak originala (sa italijanskim natpisom, blok + 10 px);
-3. **„Uputstvo za AI"** kopira isto uputstvo koje aplikacija šalje modelu (stari natpis, prevod slovo po slovo, isti
-   stil i položaj); nalepi ga u AI aplikaciju uz isečak i sačuvaj sliku koju vrati;
-4. **„Zakrpa na blok N…"** doda tu sliku na mesto isečka. Slika se uklapa bez izobličenja (AI aplikacija često vrati
-   drugu veličinu i odnos strana), crta se **iznad teksta** (natpis samog bloka je ne pokriva), a na crno-beloj strani
-   postaje siva. Ivice doteraj četkicom „obriši zakrpu", ako je AI dirao crtež oko natpisa.
-   Ako se ispod zakrpe vidi zamućena podloga, to je očišćeni stari natpis: zakrpa ga ne pokriva cela (pomeri je ili
-   uvećaj) ili je blok i dalje složen preko nje (obriši mu prevod ili blok).
+2. **„Pripremi za AI"** kopira isečak originala (sa italijanskim natpisom, blok + 10 px) u clipboard; prvi put u
+   sesiji otvori i Gemini u novom tabu, a posle toga pređi na taj tab sam (**Ctrl+Tab**, nazad **Ctrl+Shift+Tab**).
+   Aplikacija ne može da prebaci na već otvoren Gemini tab (Gemini to zabranjuje), pa ga ne otvara ponovo; ako si ga
+   zatvorio, dugme sa strelicom pored otvara nov. Najbrže: Gemini u posebnom prozoru pored editora. Tamo **Ctrl+V**;
+3. **„Uputstvo za AI"** kopira uputstvo (stari natpis, prevod slovo po slovo, isti stil i položaj); u Gemini-ju
+   ponovo **Ctrl+V** i pošalji;
+4. na slici koju Gemini vrati: desni klik → **Copy image**; u editoru, dok je blok i dalje izabran, **Ctrl+V**.
+   Slika postaje zakrpa na mestu isečka: bez izobličenja, **iznad teksta**, a na crno-beloj strani siva.
+   Ivice doteraj četkicom „obriši zakrpu", ako je AI dirao crtež oko natpisa.
+
+Ctrl+V slike radi uvek kad kursor nije u polju za tekst; bez izabranog bloka zakrpa ide na sredinu stranice (kao
+„Dodaj zakrpu…"). Ako pregledač ne dozvoli sliku u clipboard-u, „Pripremi za AI" isečak preuzme kao fajl.
+Clipboard radi na adresi `localhost` (ne na IP adresi računara).
+Ako se ispod zakrpe vidi zamućena podloga, to je očišćeni stari natpis: zakrpa ga ne pokriva cela (pomeri je ili
+uvećaj) ili je blok i dalje složen preko nje (obriši mu prevod ili blok).
 
 ### 2.6b Stil prevoda (Podešavanja)
 
