@@ -15,12 +15,21 @@ italijanske crno-bele stripove (paneli, oblačići, ručni lettering velikim slo
   Qwen2.5-VL na sopstvenoj grafičkoj kartici, preko llama-servera ili Ollame (aplikacija sama koristi onaj koji je
   instaliran); prepoznavanje naglaska (povik, podebljane reči).
 - **Prevod:** cela strana odjednom uz kontekst, glosar ustaljenih izraza i memoriju prevoda, preko OpenRouter-a
-  (npr. gemini-3.1-flash-lite, oko 0,05 $ po broju); srpski ekavski, samo latinica.
+  (npr. gemini-3.1-flash-lite, oko 0,05 $ po broju); srpski ekavski, samo latinica. **Stilovi prevoda** u
+  podešavanjima (više sačuvanih, jedan aktivan) i uputstvo za prevod po serijalu (likovi, uzrečice); probni prevod
+  bloka pre upisa; napomena prevodioca za igru reči. Tekst prelomljen u više kolona ili oblačića prevodi se u jednom
+  komadu.
+- **Onomatopeje:** zajednički glosar onomatopeja; reči van glosara ostaju kao u originalu, osim onih sa SH i W
+  (CRASH → KRAŠ), koje se nude kao predlog; „Prekrij original" umesto brisanja preko crteža.
 - **Lektura:** pravopis, upozorenja (glosar, dužina, hrvatske i ijekavske reči, naglasak), scenario za lektora.
-- **Čišćenje:** oblačići bojom papira, natpisi preko crteža LaMa modelom, četkica za ručne popravke.
+- **Čišćenje:** oblačići bojom papira, natpisi preko crteža big-lama modelom, četkica za ručne popravke (i za
+  brisanje delova zakrpe).
 - **Slova:** slaganje po obliku oblačića sa srpskim rastavljanjem, sopstveni fontovi, naglasak i kurziv;
-  naslovi od slova originala; AI prepravka natpisa i onomatopeja (model za slike, plaća se po pozivu).
-- **Izvoz:** CBZ, PDF ili ZIP; Poništi/Ponovi; red poslova sa napretkom.
+  naslovi od slova originala; AI prepravka natpisa i onomatopeja: automatski preko modela za slike (plaća se po
+  pozivu, 0,03–0,07 $) ili ručno preko AI aplikacije koju već koristiš (npr. Gemini), bez troška po slici: isečak i
+  uputstvo idu u clipboard, a vraćena slika se nalepi u editor (Ctrl+V) i postaje zakrpa na mestu natpisa.
+- **Editor:** zakrpe slikom, pomeranje strelicama (1 px, Shift 10 px), Poništi/Ponovi, traka sličica sa brojevima.
+- **Izvoz:** CBZ, PDF ili ZIP; red poslova sa napretkom.
 
 Merenja na stvarnim stranama: na probnom skupu od 12 strana detekcija nađe sve blokove, a OCR greši u 0,17 %
 znakova; prevod je u slepom poređenju ocenjen 4,5 od 5; ceo broj od 100 strana se pročita za oko pola sata, a
@@ -72,8 +81,11 @@ Izmene koda (pull request-ovi) se za sada ne primaju — vidi [CONTRIBUTING.md](
 
 StripTrans translates comics from Italian into Serbian, from scan to finished album: it detects balloons, reads
 the text (Qwen2.5-VL on your own GPU via llama-server or Ollama, whichever is installed), translates whole pages with context, glossary and
-translation memory (via OpenRouter), erases the original lettering, letters the translation with a hand-lettering
-font fitted to the balloon shape, and exports CBZ or PDF. It was built for classic Italian black-and-white
+translation memory (via OpenRouter; saved translation styles and per-series notes; text split over several columns
+is translated as one piece), erases the original lettering, letters the translation with a hand-lettering font
+fitted to the balloon shape, and exports CBZ or PDF. Titles and sound effects over artwork can be redrawn by an image
+model (paid per call) or by hand in an AI app you already use (crop and prompt go to the clipboard, the returned
+image is pasted back as a patch). It was built for classic Italian black-and-white
 comics (panels, balloons, uppercase hand lettering). The interface and documentation are in Serbian.
 
 Requirements: Windows with WSL2 and Docker Desktop (or Linux with Docker), a GPU for OCR (the model needs about
