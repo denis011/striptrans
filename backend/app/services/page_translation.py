@@ -96,7 +96,9 @@ def _apply_chain(
     sources = [flatten(block.text, emphasis=True) for block in group]
     applied = 0
     for block, part, source in zip(group, chains.split(text, sources), sources, strict=True):
-        if part and (block.translation_status in statuses or block is force):
+        # prazan blok se uvek popunjava (i kad je ostao „izmenjen" posle brisanja prevoda)
+        eligible = block.translation_status in statuses or not block.translation.strip()
+        if part and (eligible or block is force):
             _apply(block, part, model, source, note if block is group[0] else None)
             applied += 1
     return applied

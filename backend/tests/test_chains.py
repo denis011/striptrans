@@ -90,3 +90,19 @@ def test_undo_restores_link(client):
     link(client, first, None)
     client.post(f"/api/pages/{page['id']}/undo")
     assert blocks(client, page)[0]["continues_id"] == second["id"]
+
+
+def test_cleared_translation_is_filled_again_by_the_chain(client, monkeypatch):
+    page = create_page(client)
+    first = add_block(client, page, COLUMN_1, kind="caption", translation="STARO")
+    second = add_block(client, page, COLUMN_2, y=100, kind="caption", translation="STARO")
+    link(client, first, second)
+    cleared = client.patch(f"/api/blocks/{second['id']}", json={"translation": ""}).json()
+    assert cleared["translation_status"] == "none"  # brisanje nije ručna izmena
+    requests = []
+    answer = [{"number": 1, "text": "PRVI DEO ‖ DRUGI DEO.", "note": ""}]
+    use_remote(monkeypatch, [{"translations": answer}], requests)
+
+    client.post(f"/api/blocks/{first['id']}/translate", json={"model": "or:test/model"})
+
+    assert [b["translation"] for b in blocks(client, page)] == ["PRVI DEO", "DRUGI DEO."]

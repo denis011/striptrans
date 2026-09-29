@@ -130,7 +130,11 @@ def update_block(
         changes["continues_id"] = _continuation(session, block, data.continues_id)
     if "translation" in changes:
         changes["translation"] = changes["translation"].upper()
-        changes.setdefault("translation_status", "edited")
+        # obrisan prevod nije ručna izmena: blok je ponovo „bez prevoda" (prevod ga popunjava)
+        empty = not changes["translation"].strip()
+        changes.setdefault("translation_status", "none" if empty else "edited")
+        if empty:
+            changes["translation_note"] = None
         block.translation_too_long = is_too_long(flatten(block.text), changes["translation"])
     for field, value in changes.items():
         setattr(block, field, value)

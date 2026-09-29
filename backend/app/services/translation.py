@@ -45,8 +45,9 @@ Rules:
   translate the whole block as one text and put exactly the same number of ‖ marks at the
   corresponding places of the translation, so that each part fits its own column.
 - The translation goes into the balloon as it is: never add explanations or notes in brackets.
-  If a pun or a cultural reference cannot be carried over, explain it briefly in Serbian in
-  "note" (for the proofreader); otherwise leave "note" empty."""
+- "note" is only for a pun, a wordplay or a cultural reference that could not be carried over:
+  explain it briefly in Serbian for the proofreader. In every other case "note" is an empty
+  string: never comment on the tone, the style, the kind of text or your translation choices."""
 
 # Podrazumevani stil prevoda; menja se na strani Podešavanja (tamo je i povratak na ovaj)
 DEFAULT_STYLE = """- Natural, lively spoken Serbian as in the classic published Serbian comic
