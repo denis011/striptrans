@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   type BlockChanges,
   type BlockKind,
@@ -641,6 +641,18 @@ export default function BlockPanel({
   onSaveGlyph,
   onDeleteGlyph,
 }: Props) {
+  // blok izabran na slici se sam dovodi u vidno polje panela; izbor u samom panelu ne pomera listu
+  const fromPanel = useRef(false);
+  const selectedKey = selectedIds.join(",");
+  useEffect(() => {
+    if (fromPanel.current) {
+      fromPanel.current = false;
+      return;
+    }
+    const [first] = selectedKey.split(",");
+    if (!first) return;
+    document.querySelector(`[data-testid="block-${first}"]`)?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  }, [selectedKey]);
   if (blocks.length === 0) {
     return <p className="detail">Nema blokova. Uključi „Novi blok" (N) i prevuci pravougaonik preko teksta.</p>;
   }
@@ -659,7 +671,10 @@ export default function BlockPanel({
             aria-selected={selected}
             className={selected ? "selected" : ""}
             style={{ borderLeftColor: kindColor(block.kind) }}
-            onClick={(event) => onSelect(block.id, event.shiftKey || event.ctrlKey || event.metaKey)}
+            onClick={(event) => {
+              fromPanel.current = true;
+              onSelect(block.id, event.shiftKey || event.ctrlKey || event.metaKey);
+            }}
           >
             <div className="block-head">
               <strong>{block.position}</strong>

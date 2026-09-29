@@ -38,8 +38,10 @@ vi.mock("../components/PageCanvas", () => ({
     onSelectPatch,
     blockText,
     onChangeText,
+    onSelect,
   }: {
     url: string;
+    onSelect?: (id: number, add: boolean) => void;
     onCreateBlock?: (rect: Rect) => void;
     brush?: { mode: "add" | "erase"; radius: number } | null;
     onBrushStroke?: (stroke: { mode: "add" | "erase"; radius: number; points: [number, number][] }) => void;
@@ -51,6 +53,11 @@ vi.mock("../components/PageCanvas", () => ({
   }) => (
     <div>
       <span data-testid="canvas-url">{url}</span>
+      {onSelect && (
+        <button type="button" onClick={() => onSelect(102, false)}>
+          mock-izaberi-102
+        </button>
+      )}
       {onCreateBlock && (
         <button type="button" onClick={() => onCreateBlock({ x: 5, y: 6, width: 70, height: 40 })}>
           mock-nacrtaj
@@ -354,6 +361,20 @@ describe("ViewerPage", () => {
       "true",
       "true",
     ]);
+  });
+
+  it("blok izabran na slici se sam prikaže u panelu, a izbor u panelu ne pomera listu", async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    // traka sličica takođe pomera trenutnu stranicu u vidno polje: brojimo samo blokove
+    const scrolledBlocks = () => scroll.mock.contexts.filter((element) => (element as Element).matches?.("[data-testid^=block-]"));
+    renderEditor(1);
+    await userEvent.click(await screen.findByTestId("block-101"));
+    expect(scrolledBlocks()).toHaveLength(0);
+
+    await userEvent.click(screen.getByRole("button", { name: "mock-izaberi-102" }));
+
+    await waitFor(() => expect(scrolledBlocks()).toEqual([screen.getByTestId("block-102")]));
   });
 
   it("pravi nov blok iz nacrtanog pravougaonika", async () => {

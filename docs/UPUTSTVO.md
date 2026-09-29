@@ -241,7 +241,8 @@ Posao radi u pozadini i nastavlja se i ako se kontejneri restartuju. Može se pr
 
 ### 2.4 Editor stranice
 
-Otvara se klikom na sličicu. Gore su dve niske trake, u sredini je stranica, desno lista blokova, a na dnu sličice
+Otvara se klikom na sličicu. Gore su dve niske trake, u sredini je stranica, desno lista blokova (blok izabran klikom
+na stranici se sam prikaže u listi), a na dnu sličice
 sa brojem stranice ispod svake. Trenutna stranica ima obojen okvir i istaknut broj, a traka se sama pomera do nje;
 zelen okvir znači lektorisanu stranicu.
 

@@ -304,14 +304,14 @@ button.small { padding: 1px 8px; font-size: 0.8rem; }
 .filmstrip a.current .page-number { color: var(--surface); font-weight: 700; }
 .filmstrip a.reviewed img { outline: 2px solid var(--ok); }
 .filmstrip img { height: 60px; display: block; }
-.editor-body { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 360px; min-height: 0; }
+.editor-body { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 420px; min-height: 0; }
 .editor-body.no-panel { grid-template-columns: minmax(0, 1fr); }
-.side-panel { overflow-y: auto; background: var(--surface); border-left: 1px solid var(--border); padding: 8px 10px; }
+.side-panel { overflow-y: auto; overflow-x: hidden; background: var(--surface); border-left: 1px solid var(--border); padding: 8px 10px; }
 .side-panel h2 { font-size: 1rem; margin: 2px 0 8px; }
 .block-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .block-list li { border: 1px solid var(--border); border-left: 4px solid; border-radius: 6px; padding: 6px; cursor: pointer; }
 .block-list li.selected { background: var(--accent-soft); border-top-color: var(--accent); border-right-color: var(--accent); border-bottom-color: var(--accent); }
-.block-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.block-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 4px; }  /* više oznaka: prelaze u sledeći red */
 .block-head select { padding: 2px 4px; }
 .block-actions { margin-left: auto; display: flex; }
 .block-list textarea { width: 100%; box-sizing: border-box; resize: vertical; }
@@ -323,6 +323,7 @@ button.small { padding: 1px 8px; font-size: 0.8rem; }
 .block-list textarea.translation-text { background: var(--translation); }
 .translation-field { position: relative; }
 .translation-field .emphasis-button { position: absolute; right: 4px; bottom: 8px; min-width: 24px; padding: 0 6px; }
+.translation-field .translation-text { padding-right: 36px; }  /* tekst se prelama pre dugmeta B, ne ispod njega */
 .style-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border-strong); }
 .style-controls select { max-width: 150px; font-size: 0.8rem; }
 .title-controls .toolbar-group { flex-wrap: wrap; gap: 4px; }
