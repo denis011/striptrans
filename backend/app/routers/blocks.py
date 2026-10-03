@@ -475,9 +475,12 @@ def ai_patch_request(
 @router.get("/blocks/{block_id}/ai-proposals")
 def ai_proposals(block_id: int, session: SessionDep) -> list[dict]:
     """Već plaćeni predlozi za blok, najnoviji prvi: mogu se ponovo prihvatiti bez novog poziva."""
-    get_block(session, block_id)
+    block = get_block(session, block_id)
+    # predlozi napravljeni pre bloka pripadaju ranije obrisanom bloku sa istim brojem
     jobs = session.scalars(
-        select(Job).where(Job.type == "ai_patch", Job.status == "done").order_by(Job.id.desc())
+        select(Job)
+        .where(Job.type == "ai_patch", Job.status == "done", Job.created_at >= block.created_at)
+        .order_by(Job.id.desc())
     ).all()
     return [
         {

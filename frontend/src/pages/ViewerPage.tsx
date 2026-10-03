@@ -59,6 +59,7 @@ import {
 } from "../api";
 import { Ban, Boxes, Brush, CaseSensitive, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, Download, Eraser, Eye, GalleryHorizontal, Image as ImageIcon, Languages, MousePointer2, PanelRight, Redo2, ScanText, Scissors, SquarePlus, Type, Undo2 } from "lucide-react";
 import BlockPanel from "../components/BlockPanel";
+import FontPicker, { fontOption } from "../components/FontPicker";
 import type { SavedGlyph } from "../components/GlyphEditor";
 import Menu from "../components/Menu";
 import ThemeToggle from "../components/ThemeToggle";
@@ -70,7 +71,7 @@ import PageCanvas, { type Fit } from "../components/PageCanvas";
 import { moveBlock, toggleSelection } from "../editor/blocks";
 import { importRanks } from "../pageOrder";
 import { loadSetting, saveSetting } from "../storage";
-import { cropRect, fitInto, nudgeForKey, positionForKey } from "../viewer/navigation";
+import { cropRect, nudgeForKey, positionForKey } from "../viewer/navigation";
 import { patchAt } from "../viewer/patchHit";
 import type { FitMode } from "../viewer/zoom";
 
@@ -81,18 +82,6 @@ const FIT_BUTTONS: [FitMode, string, string][] = [
 ];
 
 type Mode = "select" | "draw" | "brush" | "text" | "patch";
-
-/** Mere slike iz fajla (za uklapanje zakrpe bez izobličenja); null ako pregledač ne može da je pročita. */
-async function imageSize(file: File): Promise<{ width: number; height: number } | null> {
-  try {
-    const bitmap = await createImageBitmap(file);
-    const size = { width: bitmap.width, height: bitmap.height };
-    bitmap.close();
-    return size;
-  } catch {
-    return null;
-  }
-}
 
 const NUDGE_SAVE_DELAY = 400;
 const AI_APP_URL = "https://gemini.google.com/app"; // AI aplikacija za ručni tok (pretplata korisnika)
@@ -405,11 +394,7 @@ export default function ViewerPage() {
   const deletePatchFromKey = useEffectEvent((id: number) => removePatch.mutate(id));
   const newPatch = useMutation({
     // sa izabranim blokom zakrpa pada tačno na mesto izvezenog isečka, u boji stranice
-    mutationFn: async (file: File) => {
-      if (!cropSource) return addPatch(pageId, file);
-      const size = await imageSize(file);
-      return addPatch(pageId, file, size ? fitInto(cropBox, size) : cropBox, true);
-    },
+    mutationFn: (file: File) => (cropSource ? addPatch(pageId, file, undefined, cropSource.id) : addPatch(pageId, file)),
     onSuccess: (patch) => {
       queryClient.setQueryData<Patch[]>(patchesKey, (old) => [...(old ?? []), patch]);
       refreshHistory();
@@ -1112,25 +1097,21 @@ export default function ViewerPage() {
         <Menu label="Fontovi" icon={<CaseSensitive size={16} aria-hidden />} align="right">
           <label className="field">
             Govor, misli, naracija
-            <select aria-label="Font za govor" value={dialogueFont?.key ?? ""} onChange={(event) => seriesFonts.mutate({ dialogue_font: event.target.value })}>
-              {fontList
-                .filter((font) => font.kind === "dialogue")
-                .map((font) => (
-                  <option key={font.key} value={font.key}>
-                    {font.name}
-                  </option>
-                ))}
-            </select>
+            <FontPicker
+              ariaLabel="Font za govor"
+              value={dialogueFont?.key ?? ""}
+              options={fontList.filter((font) => font.kind === "dialogue").map(fontOption)}
+              onChange={(key) => seriesFonts.mutate({ dialogue_font: key })}
+            />
           </label>
           <label className="field">
             Onomatopeje
-            <select aria-label="Font za onomatopeje" value={soundFont?.key ?? ""} onChange={(event) => seriesFonts.mutate({ sfx_font: event.target.value })}>
-              {fontList.map((font) => (
-                <option key={font.key} value={font.key}>
-                  {font.name}
-                </option>
-              ))}
-            </select>
+            <FontPicker
+              ariaLabel="Font za onomatopeje"
+              value={soundFont?.key ?? ""}
+              options={fontList.map(fontOption)}
+              onChange={(key) => seriesFonts.mutate({ sfx_font: key })}
+            />
           </label>
           <label title="Kao u srpskim izdanjima: sva naracija ukošena (bez podebljanja). Važi za ceo serijal i izvoz.">
             <input type="checkbox" checked={!!series?.caption_italic} onChange={(event) => seriesFonts.mutate({ caption_italic: event.target.checked })} />

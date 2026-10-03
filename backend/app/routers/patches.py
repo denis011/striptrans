@@ -3,13 +3,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
+from PIL import UnidentifiedImageError
 from sqlalchemy.orm import Session
 
 from app.deps import SessionDep, SettingsDep
-from app.models import Patch
+from app.models import Patch, TextBlock
 from app.routers.pages import get_page
 from app.schemas import PatchMaskEdit, PatchOut, PatchPatch
-from app.services import history, patches
+from app.services import ai_patch, history, patches
 
 router = APIRouter(prefix="/api", tags=["patches"])
 
@@ -41,6 +42,7 @@ async def add_patch(
     height: Annotated[float | None, Form()] = None,
     match_page: Annotated[bool, Form()] = False,
     above_text: Annotated[bool, Form()] = False,
+    block_id: Annotated[int | None, Form()] = None,
 ) -> PatchOut:
     """Dodaj PNG (ili WebP/JPG) kao zakrpu; uz `match_page` je siva na crno-beloj strani."""
     page = get_page(session, page_id)
@@ -50,6 +52,15 @@ async def add_patch(
     history.record(session, page, "nova zakrpa")
     try:
         data = await file.read()
+        if block_id is not None:  # slika iz AI aplikacije za blok: uklapanje, tonovi i čišćenje
+            block = session.get(TextBlock, block_id)
+            if block is None or block.page_id != page.id:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "blok ne postoji na stranici")
+            try:
+                data, box = ai_patch.from_app(Path(settings.data_dir), page, block, data)
+            except (UnidentifiedImageError, OSError) as exc:
+                raise patches.PatchRejected("fajl nije slika") from exc
+            match_page = above_text = True
         patch = patches.add(
             session, Path(settings.data_dir), page, data, box, match_page, above_text
         )

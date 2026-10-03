@@ -374,7 +374,8 @@ describe("ViewerPage", () => {
 
     await waitFor(() => expect(calls(fetchMock, "POST", "/api/pages/11/patches")).toHaveLength(1));
     const body = calls(fetchMock, "POST", "/api/pages/11/patches")[0][1]?.body as FormData;
-    expect([body.get("x"), body.get("y"), body.get("width"), body.get("height"), body.get("above_text")]).toEqual(["90", "90", "220", "100", "true"]);
+    // slika ide serveru uz broj bloka: on je uklapa u isečak, čisti i stavlja iznad teksta
+    expect([body.get("block_id"), body.get("x")]).toEqual(["101", null]);
     open.mockRestore();
   });
 
@@ -886,7 +887,8 @@ describe("ViewerPage", () => {
     expect([body.get("char"), body.get("baseline"), body.get("parts")]).toEqual(["K", "80", "[]"]);
 
     await userEvent.click(letters[4]); // K: napravljeno, bira mu se font
-    await userEvent.selectOptions(screen.getByLabelText("Font slova K (blok 1)"), "VC Ramon naslovi");
+    await userEvent.click(screen.getByRole("button", { name: "Font slova K (blok 1)" }));
+    await userEvent.click(screen.getByRole("option", { name: /VC Ramon naslovi/ }));
     await waitFor(() => expect(calls(fetchMock, "PATCH", `/api/blocks/${titled.id}`)).toHaveLength(2));
     expect(JSON.parse(String(calls(fetchMock, "PATCH", `/api/blocks/${titled.id}`)[1][1]?.body)).style.letter_fonts).toEqual({ K: "VC Ramon naslovi" });
   });

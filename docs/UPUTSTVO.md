@@ -346,7 +346,9 @@ ostavlja otvorenim.
 - ako se blokovi menjaju posle čišćenja, „Pripremi ceo album" će tu stranicu ponovo očistiti.
 
 **Slaganje teksta (lettering):**
-- font za govor i font za onomatopeje su zajednički za ceo serijal i biraju se u meniju Fontovi. „Dodaj font…"
+- font za govor i font za onomatopeje su zajednički za ceo serijal i biraju se u meniju Fontovi. U listi fontova
+  (meni Fontovi, font bloka, font slova naslova) svaki font je prikazan svojim slovima, uz probu „ČĆŽŠĐ Aa";
+  bira se klikom ili strelicama i Enter-om. „Dodaj font…"
   prima TTF ili OTF koji ima slova Č, Ć, Ž, Š i Đ;
 - tekst se slaže automatski: veličina slova kao u originalu, redovi po obliku oblačića, rastavljanje reči po srpskim
   pravilima. Crven tekst ne staje u oblačić: skrati prevod („Kraće"), smanji slova ili pomeri tekst;
@@ -403,8 +405,12 @@ ostavlja otvorenim.
   delova ostaje sačuvano („Drugi primerak"). Za naslov isečen pre v1.1 spisak se pojavi posle „Iseci slova ponovo";
 - **Novo slovo od delova…** otvara prozor za slovo kojeg nema u originalu (npr. K), kao u Photoshopu:
   1. levo izaberi slovo originala (npr. R), pa mišem izreži deo: „Pravougaonik" ili „Slobodno" (linija oko
-     dela), zatim „Dodaj deo"; „Celo slovo" dodaje celo slovo;
-  2. desno delove prevlači, ugaonim ručkama menjaj veličinu, ručkom iznad rotiraj, a „Ogledalo" ih okreće;
+     dela), zatim „Dodaj deo"; „Celo slovo" dodaje celo slovo. „Uvećanje" (do 300 %) povećava original za precizan
+     izrez slobodnom rukom. Original se pomera u svim pravcima: **Space** + prevlačenje levim tasterom miša,
+     strelice (Shift: brže), točkić (Shift + točkić: levo-desno); **+ / −** menjaju uvećanje. Prečice piše i u prozoru;
+  2. desno, u alatu „Pomeri", delove prevlači, ugaonim ručkama menjaj veličinu, ručkom iznad rotiraj, a „Ogledalo"
+     ih okreće. Višak izabranog dela briši alatima „Obriši pravougaonikom", „Obriši slobodno" i „Gumica" (sa
+     veličinom); brisanje važi samo za taj deo i pamti se uz slovo. „Poništi" (Ctrl+Z) vraća poslednju izmenu;
      isprekidane linije su osnovna linija i visina slova, a bledo slovo u pozadini je automatski napravljeno slovo;
   3. „Sačuvaj slovo": novo slovo odmah zamenjuje napravljeno (zelen okvir u traci slova). Klik na njega u traci,
      pa „Uredi slovo", otvara isti prozor za izmene ili brisanje;
@@ -479,7 +485,10 @@ Studio-u) natpis može da se uradi u AI aplikaciji koju već plaćaš (Gemini), 
 3. **„Uputstvo za AI"** kopira uputstvo (stari natpis, prevod slovo po slovo, isti stil i položaj); u Gemini-ju
    ponovo **Ctrl+V** i pošalji;
 4. na slici koju Gemini vrati: desni klik → **Copy image**; u editoru, dok je blok i dalje izabran, **Ctrl+V**.
-   Slika postaje zakrpa na mestu isečka: bez izobličenja, **iznad teksta**, a na crno-beloj strani siva.
+   Slika postaje zakrpa na mestu isečka: bez izobličenja, **iznad teksta**, a na crno-beloj strani siva, sa papirom
+   i mastilom u tonovima stranice (bez bež ili sive podloge). Kao kod AI prepravke, prenosi se samo okvir bloka i
+   nova slova koja iz njega izlaze: linije, kosa i slično što je AI dodao dalje od natpisa ne prelaze na stranicu.
+   Ono što AI doda **unutar** okvira bloka ostaje, pa to obriši četkicom „obriši zakrpu" (pomaže i tesan okvir bloka).
    Ivice doteraj četkicom „obriši zakrpu", ako je AI dirao crtež oko natpisa.
 
 Ctrl+V slike radi uvek kad kursor nije u polju za tekst; bez izabranog bloka zakrpa ide na sredinu stranice (kao

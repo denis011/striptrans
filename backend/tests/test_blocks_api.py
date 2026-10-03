@@ -136,3 +136,31 @@ def test_deleting_page_deletes_its_blocks(client, page):
 
     with client.app.state.session_factory() as session:
         assert session.scalar(select(func.count()).select_from(TextBlock)) == 0
+
+
+def test_deleted_block_id_is_not_reused_and_old_proposals_stay_hidden(client):
+    from datetime import timedelta
+
+    from factories import create_page
+
+    from app.models import Job, utcnow
+
+    page = create_page(client)
+    body = {"x": 10, "y": 10, "width": 100, "height": 40, "text": "BANG"}
+    old = client.post(f"/api/pages/{page['id']}/blocks", json=body).json()
+    with client.app.state.session_factory() as session:  # predlog obrisanog bloka
+        session.add(
+            Job(
+                type="ai_patch",
+                status="done",
+                result={"block_id": old["id"], "model": "m", "cost": 0.03},
+                created_at=utcnow() - timedelta(minutes=5),
+            )
+        )
+        session.commit()
+    client.delete(f"/api/blocks/{old['id']}")
+
+    new = client.post(f"/api/pages/{page['id']}/blocks", json=body).json()
+
+    assert new["id"] > old["id"]  # AUTOINCREMENT: broj obrisanog se ne ponavlja
+    assert client.get(f"/api/blocks/{new['id']}/ai-proposals").json() == []

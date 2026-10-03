@@ -17,6 +17,7 @@ import { blockStyle } from "../lettering/blocks";
 import { emphasizeSelection, isEmphasisKey } from "../lettering/emphasisInput";
 import { choicesFor, composeTitle } from "../lettering/title";
 import AiPatch, { AI_KINDS } from "./AiPatch";
+import FontPicker, { fontOption } from "./FontPicker";
 import GlyphEditor, { type SavedGlyph } from "./GlyphEditor";
 
 interface Props {
@@ -175,14 +176,12 @@ function StyleControls({ block, onStyle, fonts }: { block: TextBlock; onStyle: N
           {style.rotation}° → 0°
         </button>
       )}
-      <select aria-label={label("Font bloka")} value={style.font ?? ""} onChange={(event) => set({ font: event.target.value || null })}>
-        <option value="">font serijala</option>
-        {fonts.map((font) => (
-          <option key={font.key} value={font.key}>
-            {font.name}
-          </option>
-        ))}
-      </select>
+      <FontPicker
+        ariaLabel={label("Font bloka")}
+        value={style.font ?? ""}
+        options={[{ value: "", label: "font serijala" }, ...fonts.map(fontOption)]}
+        onChange={(key) => set({ font: key || null })}
+      />
       <button
         type="button"
         className={`small${style.emphasis ? " active" : ""}`}
@@ -227,12 +226,14 @@ function TitleControls({
   onCutTitle,
   onSaveGlyph,
   onDeleteGlyph,
+  fonts = [],
 }: {
   block: TextBlock;
   onStyle: NonNullable<Props["onStyle"]>;
   onCutTitle?: Props["onCutTitle"];
   onSaveGlyph?: Props["onSaveGlyph"];
   onDeleteGlyph?: Props["onDeleteGlyph"];
+  fonts?: FontInfo[];
 }) {
   const [current, setCurrent] = useState<number | null>(null);
   const [editor, setEditor] = useState<{ char: string; editing?: TitleGlyph } | null>(null);
@@ -343,18 +344,19 @@ function TitleControls({
           {madeGlyph && (title.fonts?.length ?? 0) > 0 && (
             <label className="detail">
               Font slova{" "}
-              <select
-                aria-label={label(`Font slova ${letter.char}`)}
+              <FontPicker
+                ariaLabel={label(`Font slova ${letter.char}`)}
                 value={chosenFonts[letter.char] ?? ""}
-                onChange={(event) => setLetterFont(letter.char, event.target.value)}
-              >
-                <option value="">Automatski ({title.font})</option>
-                {title.fonts!.map((font) => (
-                  <option key={font} value={font}>
-                    {font}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: "", label: `Automatski (${title.font})` },
+                  // fontovi naslova su po imenu; pregled ima onaj koji je i u spisku fontova aplikacije
+                  ...title.fonts!.map((name) => {
+                    const known = fonts.find((font) => font.name === name);
+                    return known ? { ...fontOption(known), value: name } : { value: name, label: name };
+                  }),
+                ]}
+                onChange={(name) => setLetterFont(letter.char, name)}
+              />
             </label>
           )}
         </div>
@@ -777,7 +779,7 @@ export default function BlockPanel({
                 </select>
               </label>
             )}
-            {selected && onStyle && block.kind === "title" && <TitleControls block={block} onStyle={onStyle} onCutTitle={onCutTitle} onSaveGlyph={onSaveGlyph} onDeleteGlyph={onDeleteGlyph} />}
+            {selected && onStyle && block.kind === "title" && <TitleControls block={block} onStyle={onStyle} onCutTitle={onCutTitle} onSaveGlyph={onSaveGlyph} onDeleteGlyph={onDeleteGlyph} fonts={fonts} />}
             {selected && block.id in (fits ?? {}) && (
               <span className="warning">
                 {fits?.[block.id]

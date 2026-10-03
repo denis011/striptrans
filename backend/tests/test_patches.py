@@ -159,7 +159,9 @@ def test_patch_for_a_block_is_gray_on_a_gray_page(client, settings):
     with client.app.state.session_factory() as session:
         stored = session.get(Page, page["id"])
         path = data_dir / stored.image_path
-        Image.open(path).convert("L").save(path, "JPEG")  # crno-bela strana
+        white = Image.new("L", (600, 800), 250)  # crno-bela strana: beo papir i stara slova u bloku
+    white.paste(20, (130, 130, 270, 150))
+    white.save(path, "JPEG", quality=95)
     patch = upload(
         client, page, x=10, y=20, width=100, height=50, match_page="true", above_text="true"
     )
@@ -184,11 +186,52 @@ def test_ai_prompt_for_manual_work(client):
     assert '"CRASH!"' in prompt and '"KRAŠ!"' in prompt and "K-R-A-Š" in prompt
 
 
-def test_new_patch_with_a_reused_id_gets_a_new_address(client):
+def test_new_patch_after_a_deleted_one_gets_a_new_address(client):
     page = create_page(client)
     first = upload(client, page)
     client.delete(f"/api/patches/{first['id']}")
     second = upload(client, page, png_bytes(color=(0, 0, 255, 255)))
 
-    assert second["id"] == first["id"]  # SQLite ponovo dodeljuje broj obrisane zakrpe
-    assert second["url"] != first["url"]  # pa adresa zavisi od fajla, ne samo od broja
+    assert second["id"] != first["id"]  # AUTOINCREMENT: broj obrisane zakrpe se ne ponavlja
+    assert second["url"] != first["url"]  # a adresa ionako zavisi i od fajla
+
+
+def test_ai_app_image_on_a_block_is_fitted_leveled_and_cleaned(client, settings):
+    page = create_page(client)  # 600 × 800
+    data_dir = Path(settings.data_dir)
+    with client.app.state.session_factory() as session:
+        path = data_dir / session.get(Page, page["id"]).image_path
+    white = Image.new("L", (600, 800), 250)  # crno-bela strana: beo papir i stara slova u bloku
+    white.paste(20, (130, 130, 270, 150))
+    white.save(path, "JPEG", quality=95)
+    block = client.post(
+        f"/api/pages/{page['id']}/blocks",
+        json={"x": 100, "y": 100, "width": 200, "height": 80, "text": "SWISH"},
+    ).json()
+    # „Gemini": isečak bloka + 10 px (220 × 100), bež papir, nova slova u bloku, izmišljena mrlja
+    # u uglu van natpisa; vraćen u manjoj rezoluciji
+    proposal = Image.new("L", (220, 100), 215)
+    for x in range(40, 180, 30):
+        proposal.paste(30, (x, 40, x + 15, 70))  # nova slova
+    proposal.paste(30, (0, 0, 6, 6))  # izmišljeno, van okvira bloka i odvojeno od slova
+    small = proposal.resize((176, 80))
+    buffer = io.BytesIO()
+    small.save(buffer, "PNG")
+
+    patch = client.post(
+        f"/api/pages/{page['id']}/patches",
+        data={"block_id": str(block["id"])},
+        files=[("file", ("gemini.png", buffer.getvalue(), "image/png"))],
+    ).json()
+
+    assert patch["above_text"] is True
+    with Image.open(io.BytesIO(client.get(patch["url"]).content)) as image:
+        image = image.convert("LA")
+        at = lambda x, y: image.getpixel((round(x - patch["x"]), round(y - patch["y"])))  # noqa: E731
+        assert at(150, 165)[0] > 235  # bež papir je postao beo kao stranica
+        assert at(137, 145)[0] < 90 and at(137, 145)[1] == 255  # nova slova su tu
+    # mrlja u uglu isečka (90, 90) nije preneta: zakrpa je ne pokriva ili je tu providna
+    covered = patch["x"] <= 92 and patch["y"] <= 92
+    if covered:
+        with Image.open(io.BytesIO(client.get(patch["url"]).content)) as image:
+            assert image.convert("LA").getpixel((92 - patch["x"], 92 - patch["y"]))[1] < 40

@@ -1,7 +1,7 @@
 // Slovo naslova sastavljeno od delova slova originala (Faza 6b), kao u Photoshopu: izrez iz
 // jednog slova, pa pomeranje, veličina, rotacija i ogledalo na platnu novog slova.
 
-import type { GlyphPart, TitleGlyph, TitleGlyphs } from "../api";
+import type { GlyphErase, GlyphPart, TitleGlyph, TitleGlyphs } from "../api";
 
 export interface Point {
   x: number;
@@ -88,20 +88,52 @@ export function partPlacement(part: GlyphPart) {
   };
 }
 
-/** Izrez iz slike slova: platno veličine okvira poligona, providno van poligona. */
-export function cutPart(image: CanvasImageSource, polygon: number[][]): HTMLCanvasElement | null {
+/** Izrez iz slike slova: platno veličine okvira poligona, providno van poligona i u obrisanim delovima. */
+export function cutPart(image: CanvasImageSource, polygon: number[][], erase: GlyphErase[] = []): HTMLCanvasElement | null {
   const box = polygonBox(polygon);
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.ceil(box.width));
   canvas.height = Math.max(1, Math.ceil(box.height));
   const context = canvas.getContext("2d");
   if (!context) return null;
+  context.save();
   context.beginPath();
   polygon.forEach(([x, y], index) => (index === 0 ? context.moveTo(x - box.left, y - box.top) : context.lineTo(x - box.left, y - box.top)));
   context.closePath();
   context.clip();
   context.drawImage(image, -box.left, -box.top);
+  context.restore();
+  // obrisani delovi: „destination-out" briše već nacrtano
+  context.globalCompositeOperation = "destination-out";
+  context.fillStyle = "#000";
+  context.strokeStyle = "#000";
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  for (const cut of erase) {
+    context.beginPath();
+    cut.points.forEach(([x, y], index) => (index === 0 ? context.moveTo(x - box.left, y - box.top) : context.lineTo(x - box.left, y - box.top)));
+    if (cut.radius) {
+      if (cut.points.length === 1) context.lineTo(cut.points[0][0] - box.left + 0.01, cut.points[0][1] - box.top);
+      context.lineWidth = cut.radius * 2;
+      context.stroke();
+    } else {
+      context.closePath();
+      context.fill();
+    }
+  }
+  context.globalCompositeOperation = "source-over";
   return canvas;
+}
+
+/** Tačka platna novog slova u pikselima izvornog slova dela (obrnuto od `partPlacement`). */
+export function toSource(part: GlyphPart, point: Point): Point {
+  const box = polygonBox(part.polygon);
+  const angle = (-part.rotation * Math.PI) / 180;
+  const dx = point.x - part.x;
+  const dy = point.y - part.y;
+  const rx = dx * Math.cos(angle) - dy * Math.sin(angle);
+  const ry = dx * Math.sin(angle) + dy * Math.cos(angle);
+  return { x: rx / part.scaleX + box.width / 2 + box.left, y: ry / part.scaleY + box.height / 2 + box.top };
 }
 
 /** Okvir mastila (alfa > 0) u RGBA pikselima platna; null ako je platno prazno. */

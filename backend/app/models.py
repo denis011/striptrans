@@ -10,6 +10,11 @@ BLOCK_KINDS = ("speech", "thought", "caption", "sfx", "other", "title")
 GLOSSARY_KINDS = ("name", "place", "phrase")  # onomatopeje imaju svoj glosar
 
 
+# SQLite AUTOINCREMENT: broj obrisanog reda se ne dodeljuje ponovo. Inače nov blok, zakrpa ili
+# stranica dobije broj obrisanog i nasledi njegove keširane slike i AI predloge (migracija 0025).
+NO_REUSE = {"sqlite_autoincrement": True}
+
+
 def utcnow() -> datetime:
     """Naivno UTC vreme; SQLite ne čuva vremensku zonu."""
     return datetime.now(UTC).replace(tzinfo=None)
@@ -53,6 +58,7 @@ class Font(Base):
     """Korisnički font (TTF/OTF) u /data/fonts; ugrađeni fontovi nisu u bazi."""
 
     __tablename__ = "fonts"
+    __table_args__ = (NO_REUSE,)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
@@ -75,6 +81,7 @@ class DictionaryWord(Base):
 
 class Project(Base):
     __tablename__ = "projects"
+    __table_args__ = (NO_REUSE,)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     series_id: Mapped[int] = mapped_column(ForeignKey("series.id"))
@@ -94,7 +101,10 @@ class Project(Base):
 
 class Page(Base):
     __tablename__ = "pages"
-    __table_args__ = (Index("ix_pages_project_kind_position", "project_id", "kind", "position"),)
+    __table_args__ = (
+        Index("ix_pages_project_kind_position", "project_id", "kind", "position"),
+        NO_REUSE,
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
@@ -130,6 +140,7 @@ class Page(Base):
 
 class TextBlock(Base):
     __tablename__ = "text_blocks"
+    __table_args__ = (NO_REUSE,)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     page_id: Mapped[int] = mapped_column(ForeignKey("pages.id", ondelete="CASCADE"), index=True)
@@ -177,6 +188,7 @@ class Patch(Base):
     """Zakrpa slikom (Faza 6c): PNG napravljen van aplikacije, postavljen preko stranice."""
 
     __tablename__ = "patches"
+    __table_args__ = (NO_REUSE,)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     page_id: Mapped[int] = mapped_column(ForeignKey("pages.id", ondelete="CASCADE"), index=True)
@@ -263,6 +275,7 @@ class Export(Base):
     """Izvoz albuma: browser crta stranice, backend ih prima i pakuje (CBZ, PDF, ZIP)."""
 
     __tablename__ = "exports"
+    __table_args__ = (NO_REUSE,)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(
@@ -288,6 +301,7 @@ class Export(Base):
 
 class Job(Base):
     __tablename__ = "jobs"
+    __table_args__ = (NO_REUSE,)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     type: Mapped[str] = mapped_column(String(50))

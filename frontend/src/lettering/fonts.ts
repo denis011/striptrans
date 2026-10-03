@@ -18,7 +18,8 @@ export const familyName = (key: string, url = "") => {
   return version ? `st-${key}-${version}` : `st-${key}`;
 };
 
-function loadFont(key: string, url: string): Promise<void> {
+/** Učitaj font u pregledač (jednom po adresi). */
+export function loadFont(key: string, url: string): Promise<void> {
   let promise = loads.get(url);
   if (!promise) {
     promise =

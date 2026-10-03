@@ -124,9 +124,16 @@ export interface TitleGlyph {
  * Deo slova originala u sastavljenom slovu: izrez (poligon u pikselima izvornog slova) i
  * položaj njegove sredine na platnu novog slova, sa veličinom, ogledalom i rotacijom.
  */
+/** Obrisan deo izreza, u pikselima izvornog slova: poligon (pravougaonik, slobodno) ili potez gumice. */
+export interface GlyphErase {
+  points: number[][];
+  radius?: number; // samo gumica: poluprečnik poteza
+}
+
 export interface GlyphPart {
   source: string; // ključ izvornog slova
   polygon: number[][];
+  erase?: GlyphErase[]; // delovi izreza obrisani u prozoru „Novo slovo"
   x: number;
   y: number;
   scaleX: number; // negativno: ogledalo
@@ -623,16 +630,16 @@ export interface Patch {
 export type PatchChanges = Partial<Omit<Patch, "id" | "url">>;
 
 export const listPatches = (pageId: number) => request<Patch[]>(`/api/pages/${pageId}/patches`);
-/** Zakrpa preko stranice; uz `matchPage` je siva na crno-beloj strani (AI aplikacije vraćaju boju). */
-export function addPatch(pageId: number, file: File, box?: Rect, onBlock = false): Promise<Patch> {
+/**
+ * Zakrpa preko stranice. Uz `blockId` je to slika iz AI aplikacije za taj blok: server je uklapa u isečak
+ * bez izobličenja, iznad teksta, u tonovima stranice, i zadržava samo natpis (crtež koji je AI dodao dalje
+ * od natpisa se ne prenosi).
+ */
+export function addPatch(pageId: number, file: File, box?: Rect, blockId?: number): Promise<Patch> {
   const body = new FormData();
   body.append("file", file, file.name);
   for (const [key, value] of Object.entries(box ?? {})) body.append(key, String(value));
-  // zakrpa na bloku: u boji stranice i iznad teksta, da je natpis samog bloka ne pokrije
-  if (onBlock) {
-    body.append("match_page", "true");
-    body.append("above_text", "true");
-  }
+  if (blockId !== undefined) body.append("block_id", String(blockId));
   return request<Patch>(`/api/pages/${pageId}/patches`, { method: "POST", body });
 }
 export const updatePatch = (id: number, changes: PatchChanges) =>

@@ -47,10 +47,14 @@ PROMPT = """This is a crop of a page from an Italian comic book: a {what}. Repla
 lettering "{source}" with the Serbian translation "{target}" (Latin script, keep the letters
 Č Ć Ž Š Đ exactly). Draw it in exactly the same lettering style: same letter shapes, weight, slant,
 outline, fill, shadow and texture, same colours, same size and the same position and angle. Where
-the new text is shorter, restore the background or artwork behind the removed letters. Keep
-everything else (artwork, lines, background) exactly as it is. The new lettering must read exactly
-"{target}": {count} letters, {spelled}; no other letters and no leftovers of the old ones. Return
-only the edited image with the same aspect ratio."""
+the new text is shorter, restore the background or artwork behind the removed letters. Change
+only the letters: keep every other pixel (artwork, lines, background) exactly as it is. Never add
+anything that is not in the input image: no new lines, strokes, hair, shading, objects or paper
+texture. The image is cropped on purpose: whatever is cut off at its edges stays cut off, do not
+complete or extend it. Keep the same colours as the input; a black-and-white input stays pure black
+ink on pure white paper. The new lettering must read exactly "{target}": {count} letters,
+{spelled}; no other letters and no leftovers of the old ones. Return only the edited image with the
+same aspect ratio."""
 
 
 def build_prompt(block: TextBlock, kind: str | None = None) -> str:
@@ -140,6 +144,57 @@ def masked(
     rgba = proposal.convert("RGBA")
     rgba.putalpha(Image.fromarray(np.clip(alpha, 0, 255).astype(np.uint8)))
     return rgba.crop((x0, y0, x1, y1)), (x0, y0, x1 - x0, y1 - y0)
+
+
+def level_like(proposal: np.ndarray, original: np.ndarray) -> np.ndarray:
+    """Tonovi predloga kao u originalu: AI vraća sivkast ili bež papir i sivo mastilo, pa se papir
+    (svetli percentil) i mastilo (tamni percentil) predloga preslikaju na vrednosti originala."""
+    p_ink, p_paper = np.percentile(proposal, (2, 90))
+    o_ink, o_paper = np.percentile(original, (2, 90))
+    if p_paper - p_ink < 30:  # skoro jednobojan predlog: ne dira se
+        return proposal
+    if o_paper - o_ink < 60:  # u isečku originala nema mastila: mastilo predloga ostaje crno
+        o_ink = 0.0
+    scaled = (proposal.astype(np.float32) - p_ink) * (o_paper - o_ink) / (p_paper - p_ink) + o_ink
+    return np.clip(scaled, 0, 255).astype(np.uint8)
+
+
+def from_app(
+    data_dir: Path, page: Page, block: TextBlock, image: bytes, margin: int = 10
+) -> tuple[bytes, dict]:
+    """Slika iz AI aplikacije za blok (ručni tok), sa istim čišćenjem kao AI prepravka.
+
+    Uklopi se u isečak originala bez izobličenja, na crno-beloj strani dobije tonove originala, a
+    zadrži se samo okvir bloka i nova slova iz njega; izmišljen crtež dalje od natpisa se ne
+    prenosi. Vraća PNG i okvir zakrpe na stranici.
+    """
+    x0, y0 = max(0, round(block.x - margin)), max(0, round(block.y - margin))
+    x1 = min(page.width, round(block.x + block.width + margin))
+    y1 = min(page.height, round(block.y + block.height + margin))
+    piece_bytes = patches.crop(data_dir, page, (x0, y0, x1 - x0, y1 - y0), False)
+    with Image.open(io.BytesIO(piece_bytes)) as crop:
+        gray_page = crop.mode in ("L", "1", "LA")
+        original = crop.convert("L" if gray_page else "RGB")
+    with Image.open(io.BytesIO(image)) as received:
+        proposal = received.convert(original.mode)
+    # bez izobličenja: predlog na sredini isečka, a ostatak isečka je original (tu nema izmena)
+    scale = min(original.width / proposal.width, original.height / proposal.height)
+    size = (max(1, round(proposal.width * scale)), max(1, round(proposal.height * scale)))
+    fitted = original.copy()
+    fitted.paste(
+        proposal.resize(size, Image.LANCZOS),
+        ((original.width - size[0]) // 2, (original.height - size[1]) // 2),
+    )
+    if gray_page:
+        fitted = Image.fromarray(level_like(np.asarray(fitted), np.asarray(original)))
+    inner = (round(block.x) - x0, round(block.y) - y0, round(block.width), round(block.height))
+    mask = change_mask(np.asarray(original.convert("L")), np.asarray(fitted.convert("L")), inner)
+    piece, (px, py, pw, ph) = masked(fitted, mask)
+    if gray_page:
+        piece = piece.convert("LA")
+    buffer = io.BytesIO()
+    piece.save(buffer, "PNG")
+    return buffer.getvalue(), {"x": x0 + px, "y": y0 + py, "width": pw, "height": ph}
 
 
 def accept(session: Session, data_dir: Path, page: Page, block: TextBlock, result: dict) -> Patch:

@@ -12,7 +12,7 @@ function draw(parts: GlyphPart[], images: Map<string, HTMLImageElement>, canvas:
     const layer = new Konva.Layer();
     for (const part of parts) {
       const source = images.get(part.source);
-      const image = source && cutPart(source, part.polygon);
+      const image = source && cutPart(source, part.polygon, part.erase);
       if (image) layer.add(new Konva.Image({ image, ...partPlacement(part) }));
     }
     stage.add(layer);
