@@ -1,3 +1,5 @@
+import io
+
 import numpy as np
 from factories import create_page
 from PIL import Image
@@ -293,3 +295,38 @@ def test_covered_sound_effect_is_not_erased(client, monkeypatch):
     run_once(state.session_factory, "w1", state.settings)
 
     assert erased == []
+
+
+def test_clean_only_one_block_keeps_the_rest_and_undo_restores(client, settings):
+    from pathlib import Path
+
+    from app.models import Page
+
+    page = create_page(client)
+    with client.app.state.session_factory() as session:
+        path = Path(settings.data_dir) / session.get(Page, page["id"]).image_path
+    picture = Image.new("L", (600, 800), 250)  # dva oblačića sa „tekstom"
+    picture.paste(20, (120, 120, 280, 140))
+    picture.paste(20, (120, 420, 280, 440))
+    picture.save(path, "JPEG", quality=95)
+    first, second = (
+        client.post(
+            f"/api/pages/{page['id']}/blocks",
+            json={"x": 100, "y": y, "width": 200, "height": 60, "text": "CIAO", "kind": "speech"},
+        ).json()
+        for y in (100, 400)
+    )
+
+    assert client.post(f"/api/blocks/{first['id']}/clean").status_code == 200
+
+    def clean_pixel(x, y):
+        with Image.open(
+            io.BytesIO(client.get(f"/api/pages/{page['id']}/clean-image").content)
+        ) as image:
+            return image.convert("L").getpixel((x, y))
+
+    assert clean_pixel(200, 130) > 200  # prvi blok je očišćen
+    assert clean_pixel(200, 430) < 60  # drugi nije
+    client.post(f"/api/pages/{page['id']}/undo")
+    assert clean_pixel(200, 130) < 60  # Poništi vraća original ispod prvog bloka
+    assert second["id"] != first["id"]

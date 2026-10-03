@@ -16,6 +16,7 @@ import {
   listStyles,
   previewTranslation,
   addPatch,
+  cleanBlock,
   autoOrderBlocks,
   cancelJob,
   cleanPage,
@@ -479,7 +480,24 @@ export default function ViewerPage() {
   });
   const flags = useMutation({
     mutationFn: (changes: { skip?: boolean; ocr_reviewed?: boolean; translation_reviewed?: boolean }) => updatePage(pageId, changes),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["project", projectId] }),
+    onSuccess: (_page, changes) => {
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      if (changes.translation_reviewed) {
+        refreshBlocks(); // lektorisana stranica odobrava prevode
+        refreshHistory();
+      }
+    },
+  });
+  const [cleaningIds, setCleaningIds] = useState<number[]>([]);
+  const cleanBlockMutation = useMutation({
+    mutationFn: (id: number) => cleanBlock(id),
+    onMutate: (id) => setCleaningIds((ids) => [...ids, id]),
+    onSettled: (_block, _error, id) => {
+      setCleaningIds((ids) => ids.filter((item) => item !== id));
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] }); // nova očišćena slika
+      refreshBlocks();
+      refreshHistory();
+    },
   });
   const translatePageMutation = useMutation({
     mutationFn: () => translatePage(pageId, activeTranslationModel),
@@ -1192,6 +1210,8 @@ export default function ViewerPage() {
             onDelete={(id) => remove.mutate([id])}
             readingIds={readingIds}
             onRead={(id) => readBlocks([id])}
+            onClean={(id) => cleanBlockMutation.mutate(id)}
+            cleaningIds={cleaningIds}
             translatingIds={translatingIds}
             onTranslate={(id, shorter) => translate.mutate({ id, shorter })}
             reviews={reviews}

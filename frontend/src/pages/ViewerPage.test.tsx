@@ -393,6 +393,15 @@ describe("ViewerPage", () => {
     await waitFor(() => expect(scrolledBlocks()).toEqual([screen.getByTestId("block-102")]));
   });
 
+  it("čisti original samo ispod jednog bloka", async () => {
+    const fetchMock = renderEditor(1, { "POST /api/blocks/102/clean": blocks[1] });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Očisti blok 2" }));
+
+    await waitFor(() => expect(calls(fetchMock, "POST", "/api/blocks/102/clean")).toHaveLength(1));
+    expect(calls(fetchMock, "POST", "/api/pages/11/clean")).toHaveLength(0);
+  });
+
   it("pravi nov blok iz nacrtanog pravougaonika", async () => {
     const created = { ...blocks[0], id: 103, position: 3 };
     const fetchMock = renderEditor(1, {

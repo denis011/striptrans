@@ -16,7 +16,7 @@ from PIL import Image
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.models import Page, utcnow
+from app.models import Page, TextBlock, utcnow
 from app.services import history, title
 from app.services.geometry import Box
 from app.services.inpaint import artwork_mask, inpaint, needs_inpaint, text_angle
@@ -179,14 +179,20 @@ def ink_letters(image: np.ndarray, blocks: list[tuple[str, Box]]) -> np.ndarray:
 
 
 def clean_image(
-    image: np.ndarray, blocks: list[tuple[str, Box]], probability: np.ndarray
+    image: np.ndarray,
+    blocks: list[tuple[str, Box]],
+    probability: np.ndarray,
+    base: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, CleanResult]:
-    """Vrati očišćenu sliku (RGB), masku prekrivenih piksela i broj očišćenih blokova."""
+    """Vrati očišćenu sliku (RGB), masku prekrivenih piksela i broj očišćenih blokova.
+
+    `base`: već očišćena slika na koju se dodaje (jedan blok); inače se kreće od originala.
+    """
     height, width = probability.shape
     text = cv2.dilate(
         (probability > MASK_THRESHOLD).astype(np.uint8), np.ones((DILATE, DILATE), np.uint8)
     ).astype(bool)
-    cleaned = image.copy()
+    cleaned = (image if base is None else base).copy()
     covered = np.zeros((height, width), dtype=bool)
     result = CleanResult()
     for kind, (x, y, w, h) in blocks:
@@ -244,25 +250,62 @@ def remeasure_shapes(session: Session, settings: Settings, page: Page) -> int:
     return len(changed)
 
 
-def clean_page(session: Session, settings: Settings, page: Page) -> CleanResult:
+def start_clean(data_dir: Path, page: Page) -> None:
+    """Očišćena slika jednaka originalu i prazna maska (pre prvog čišćenja jednog bloka)."""
+    clean_path, mask_path = clean_paths(page)
+    with Image.open(data_dir / page.image_path) as original:
+        mode = "L" if original.mode in ("L", "1", "LA") else "RGB"
+        image = original.convert(mode)
+        size = original.size
+    for relative, picture in (
+        (clean_path, image),
+        (mask_path, Image.new("1", size, 0)),
+    ):
+        target = data_dir / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        picture.save(target, optimize=True)
+    page.clean_path, page.mask_path = clean_path, mask_path
+
+
+def _saved_clean(data_dir: Path, page: Page) -> tuple[np.ndarray, np.ndarray] | None:
+    """Već očišćena slika (RGB) i maska stranice, ako postoje."""
+    if not (page.clean_path and page.mask_path):
+        return None
+    clean_file, mask_file = data_dir / page.clean_path, data_dir / page.mask_path
+    if not (clean_file.exists() and mask_file.exists()):
+        return None
+    with Image.open(clean_file) as clean, Image.open(mask_file) as mask:
+        return np.array(clean.convert("RGB")), np.asarray(mask.convert("L")) > 127
+
+
+def clean_page(
+    session: Session, settings: Settings, page: Page, only: TextBlock | None = None
+) -> CleanResult:
+    """Očisti stranicu; uz `only` samo taj blok, na već očišćenu sliku (ostalo, i potezi četkicom,
+    ostaje kako jeste)."""
     data_dir = Path(settings.data_dir)
+    chosen = [only] if only is not None else list(page.blocks)
     # nepročitan blok nema šta da upiše, pa se original ispod njega ne briše
     blocks = [
         (block.kind, (block.x, block.y, block.width, block.height))
-        for block in page.blocks
+        for block in chosen
         if not unread(block)
     ]
     with Image.open(data_dir / page.image_path) as original:
         mode = "L" if original.mode in ("L", "1", "LA") else "RGB"  # crno-bele strane ostaju sive
         rgb = original.convert("RGB")
     pixels = np.asarray(rgb)
-    cleaned, covered, result = clean_image(pixels, blocks, ink_letters(pixels, blocks))
+    saved = _saved_clean(data_dir, page) if only is not None else None
+    base, previous = saved if saved else (None, None)
+    cleaned, covered, result = clean_image(pixels, blocks, ink_letters(pixels, blocks), base)
+    if previous is not None:
+        covered |= previous
     model = sfx_model_path(settings)  # neobavezan: bez njega maska onomatopeja je samo od mastila
     probability = (
         text_mask(rgb, model) if model.exists() else np.zeros(pixels.shape[:2], np.float32)
     )
     original_gray = np.asarray(rgb.convert("L"))
-    for block in page.blocks:
+    for block in chosen:
         if block.kind != "title":
             continue
         # naslov: tačno isečena slova, bojom trake (ili LaMa ako traka nije jednobojna)
@@ -276,7 +319,7 @@ def clean_page(session: Session, settings: Settings, page: Page) -> CleanResult:
         covered |= letters.mask
         block.angle = 0.0
         result.inpainted += 1
-    for block in page.blocks:
+    for block in chosen:
         if block.kind == "title" or not needs_inpaint(block.kind, block.text, block.translation):
             continue
         if (block.style or {}).get("cover"):
@@ -289,7 +332,7 @@ def clean_page(session: Session, settings: Settings, page: Page) -> CleanResult:
         result.inpainted += 1
     result.pixels = int(covered.sum())
     gray = np.asarray(Image.fromarray(cleaned).convert("L"))
-    for block in page.blocks:
+    for block in chosen:
         box = (block.x, block.y, block.width, block.height)
         if block.kind in CLEAN_KINDS:
             block.bubble_polygon = bubble_shape(gray, box)

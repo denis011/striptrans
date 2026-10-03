@@ -182,7 +182,7 @@ def test_project_progress_counts_steps_without_skipped_pages(client):
 
     assert progress["pages"] == 1 and progress["skipped"] == []
     assert progress["with_blocks"] == 1 and progress["blocks"] == 1
-    assert progress["translation"] == {"edited": 1}
+    assert progress["translation"] == {"approved": 1}  # lektorisana stranica odobrava prevode
     assert progress["proofread"] == 1 and progress["cleaned"] == 0
     assert progress["exported_at"] is None
 
@@ -267,3 +267,34 @@ def test_page_and_cover_carry_image_version(client):
     [project] = [p for p in client.get("/api/projects").json() if p["cover_page_id"] == page["id"]]
     assert project["cover_version"] == page["version"]
     assert "image_path" not in page
+
+
+def test_marking_a_page_reviewed_approves_its_translations(client):
+    from factories import create_page
+
+    page = create_page(client)
+
+    def add(text, translation, y):
+        block = client.post(
+            f"/api/pages/{page['id']}/blocks",
+            json={"x": 10, "y": y, "width": 100, "height": 40, "text": text},
+        ).json()
+        if translation:
+            client.patch(f"/api/blocks/{block['id']}", json={"translation": translation})
+        return block
+
+    add("CIAO", "ZDRAVO", 10)
+    add("ANDIAMO", "IDEMO", 100)
+    add("ZZZ", "", 200)
+
+    client.patch(f"/api/pages/{page['id']}", json={"translation_reviewed": True})
+
+    statuses = [
+        b["translation_status"] for b in client.get(f"/api/pages/{page['id']}/blocks").json()
+    ]
+    assert statuses == ["approved", "approved", "none"]
+    client.patch(f"/api/pages/{page['id']}", json={"translation_reviewed": False})
+    statuses = [
+        b["translation_status"] for b in client.get(f"/api/pages/{page['id']}/blocks").json()
+    ]
+    assert statuses == ["approved", "approved", "none"]  # skidanje oznake ne poništava odobrenja

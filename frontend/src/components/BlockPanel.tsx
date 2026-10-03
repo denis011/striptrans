@@ -1,3 +1,4 @@
+import { Eraser } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   type BlockChanges,
@@ -29,6 +30,8 @@ interface Props {
   onDelete: (id: number) => void;
   readingIds: number[];
   onRead: (id: number) => void;
+  onClean?: (id: number) => void; // očisti original samo ispod ovog bloka
+  cleaningIds?: number[];
   translatingIds: number[];
   onTranslate: (id: number, shorter: boolean) => void;
   reviews?: Record<number, BlockReview>;
@@ -629,6 +632,8 @@ export default function BlockPanel({
   onDelete,
   readingIds,
   onRead,
+  onClean,
+  cleaningIds = [],
   translatingIds,
   onTranslate,
   reviews,
@@ -717,6 +722,18 @@ export default function BlockPanel({
                 >
                   ↻
                 </button>
+                {onClean && (
+                  <button
+                    type="button"
+                    className="icon"
+                    aria-label={`Očisti blok ${block.position}`}
+                    title="Očisti original samo ispod ovog bloka (ostatak stranice ostaje)"
+                    disabled={cleaningIds.includes(block.id)}
+                    onClick={stop(() => onClean(block.id))}
+                  >
+                    <Eraser size={14} aria-hidden />
+                  </button>
+                )}
                 <button type="button" className="icon" aria-label={`Pomeri blok ${block.position} gore`} disabled={index === 0} onClick={stop(() => onMove(block.id, -1))}>
                   ↑
                 </button>

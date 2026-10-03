@@ -27,6 +27,7 @@ from app.schemas import (
     TranslateRequest,
 )
 from app.services import ai_patch, emphasis, history, llm, title
+from app.services.cleaning import clean_page, start_clean
 from app.services.glossary_suggest import flatten
 from app.services.llm_base import LlmError
 from app.services.ocr import read_block
@@ -390,6 +391,27 @@ def translate_block_request(
         return translate_block(session, block, model, shorter=bool(data and data.shorter))
     except (LlmError, TranslationFailed) as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+
+
+CLEAN_BOUNDS = 24  # px oko bloka koje „Poništi" vraća posle čišćenja jednog bloka
+
+
+@router.post("/blocks/{block_id}/clean")
+def clean_block(block_id: int, session: SessionDep, settings: SettingsDep) -> BlockOut:
+    """Očisti original samo ispod ovog bloka; ostatak stranice i potezi četkicom ostaju."""
+    block = get_block(session, block_id)
+    page = block.page
+    data_dir = Path(settings.data_dir)
+    if not page.clean_path or not (data_dir / page.clean_path).exists():
+        # prvo čišćenje: očišćena slika kreće od originala (da „Poništi" ima šta da vrati)
+        start_clean(data_dir, page)
+    x0, y0 = max(0, int(block.x) - CLEAN_BOUNDS), max(0, int(block.y) - CLEAN_BOUNDS)
+    x1 = min(page.width, int(block.x + block.width) + CLEAN_BOUNDS)
+    y1 = min(page.height, int(block.y + block.height) + CLEAN_BOUNDS)
+    patch = history.image_patch(data_dir, page, (x0, y0, x1 - x0, y1 - y0))
+    history.record(session, page, "čišćenje bloka", patch, data_dir)
+    clean_page(session, settings, page, only=block)
+    return block
 
 
 @router.get("/blocks/{block_id}/ai-prompt")

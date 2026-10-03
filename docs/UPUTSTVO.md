@@ -248,7 +248,8 @@ zelen okvir znači lektorisanu stranicu.
 
 **Gornja traka:** StripTrans (početna), naziv projekta (nazad na projekat), ‹ strana › , prikaz (Cela, Širina,
 1:1), oznake stranice kao prekidači (**OCR proveren**, **Lektorisana**, **Preskoči**), dugmad za sakrivanje sličica
-i panela blokova i prekidač teme (kao sistem → svetla → tamna; izbor se pamti u browseru).
+i panela blokova i prekidač teme (kao sistem → svetla → tamna; izbor se pamti u browseru). Uključena **Lektorisana**
+odobrava i sve prevode na stranici (ulaze u memoriju prevoda); isključivanje ne poništava odobrenja.
 
 **Traka alata**, s leva nadesno:
 - režim rada, uvek je uključen samo jedan: **Izbor**, **Blok** (novi blok, N), **Četkica** (B), **Tekst** (uređivanje
@@ -333,6 +334,9 @@ ostavlja otvorenim.
   (potpis „Ime Prezime" u poslednjem redu se ne računa).
 
 **Čišćenje:**
+- **Očisti blok** (dugme sa gumicom u zaglavlju bloka) čisti original samo ispod tog bloka; ostatak stranice i ranije
+  ispravke četkicom ostaju, a „Poništi" ga vraća. Zgodno kad treba ponovo očistiti jedan oblačić (npr. posle
+  pomeranja okvira) bez čišćenja cele stranice;
 - **Očisti** briše originalni tekst. Govor, misao i naracija se prekrivaju bojom oblačića. Onomatopeje i
   natpisi (Ostalo) se brišu preko crteža samo ako imaju prevod različit od originala;
 - režim **Četkica** (B) ispravlja masku čišćenja. Prevlači se preko mesta, uz izbor režima i veličine:

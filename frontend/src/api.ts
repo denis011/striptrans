@@ -479,6 +479,9 @@ export const applySfx = (projectId: number) => request<{ changed: number }>(`/ap
 export const listTranslationModels = () => request<OcrModels>("/api/translation/models");
 export const translateBlock = (id: number, model: string | undefined, shorter: boolean) =>
   request<TextBlock>(`/api/blocks/${id}/translate`, json("POST", { model, shorter }));
+/** Očisti original samo ispod jednog bloka (ostatak stranice i potezi četkicom ostaju). */
+export const cleanBlock = (id: number) => request<TextBlock>(`/api/blocks/${id}/clean`, { method: "POST" });
+
 /** Uputstvo za model za slike (isto kao AI prepravka), za ručni rad u AI aplikaciji. */
 export const getAiPrompt = (blockId: number) => request<{ prompt: string }>(`/api/blocks/${blockId}/ai-prompt`);
 

@@ -11,6 +11,7 @@ from app.schemas import HistoryOut, HistoryStep, JobOut, MaskEdit, PageOut, Page
 from app.services import history, patches, title
 from app.services.cleaning import Stroke, edit_mask
 from app.services.page_import import delete_page_files
+from app.services.page_translation import remember
 
 router = APIRouter(prefix="/api/pages", tags=["pages"])
 
@@ -28,6 +29,16 @@ def get_page(session: Session, page_id: int) -> Page:
 @router.patch("/{page_id}")
 def update_page(page_id: int, data: PagePatch, session: SessionDep) -> PageOut:
     page = get_page(session, page_id)
+    if data.translation_reviewed and not page.translation_reviewed:
+        # lektorisana stranica: svi prevodi se odobravaju i ulaze u memoriju (kao Ctrl+Shift+Enter)
+        pending = [
+            b for b in page.blocks if b.translation.strip() and b.translation_status != "approved"
+        ]
+        if pending:
+            history.record(session, page, "lektorisana stranica")
+            for block in pending:
+                block.translation_status = "approved"
+                remember(session, block)
     for field, value in data.model_dump(exclude_unset=True, exclude_none=True).items():
         setattr(page, field, value)
     session.commit()
