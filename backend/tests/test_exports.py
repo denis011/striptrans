@@ -192,3 +192,13 @@ def test_drawing_progress_is_shown_in_the_job_list_and_project_progress(client, 
     assert progress["export_active"]["stage"] == "packing"
     run_worker(client)
     assert client.get(f"/api/projects/{project_id}").json()["progress"]["export_active"] is None
+
+
+def test_cancelled_export_does_not_stay_packing(client):
+    project_id, _ = project_with_pages(client)
+    export = client.post(f"/api/projects/{project_id}/exports", json={}).json()
+    job = client.post(f"/api/exports/{export['id']}/finish").json()
+
+    assert client.post(f"/api/jobs/{job['id']}/cancel").json()["status"] == "cancelled"
+
+    assert client.get(f"/api/projects/{project_id}/exports").json()[0]["status"] == "failed"

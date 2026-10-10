@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Page, Patch
+from app.services.geometry import GRAY_MODES
 
 MAX_BYTES = 25 * 1024 * 1024
 TYPES = {"PNG": ".png", "WEBP": ".webp", "JPEG": ".jpg"}
@@ -46,7 +47,7 @@ def _fit(width: float, height: float, page: Page) -> tuple[float, float, float, 
 def _grayscale_like_page(data_dir: Path, page: Page, data: bytes) -> bytes:
     """Na crno-beloj strani slika postaje siva (sa providnošću): AI aplikacije vraćaju boju."""
     with Image.open(data_dir / page.image_path) as original:
-        if original.mode not in ("L", "1", "LA"):
+        if original.mode not in GRAY_MODES:
             return data
     with Image.open(io.BytesIO(data)) as image:
         gray = image.convert("LA")

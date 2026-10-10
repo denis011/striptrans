@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.config import Settings
 from app.models import Page, Patch, TextBlock
 from app.services import patches
+from app.services.geometry import GRAY_MODES
 from app.services.glossary_suggest import flatten
 from app.services.openrouter import OpenRouterClient
 
@@ -94,8 +95,11 @@ def make_proposal(
     image, cost = client.edit_image(build_prompt(block), original, model)
     with Image.open(io.BytesIO(original)) as source, Image.open(io.BytesIO(image)) as result:
         # crno-bele strane ostaju sive; model uvek vraća boju i svoju veličinu
-        mode = "L" if source.mode in ("L", "1", "LA") else "RGB"
+        mode = "L" if source.mode in GRAY_MODES else "RGB"
         fitted = result.convert(mode).resize(source.size, Image.LANCZOS)
+        if mode == "RGB":
+            colors = match_colors(np.asarray(fitted), np.asarray(source.convert(mode)))
+            fitted = Image.fromarray(colors)
     target = proposal_path(data_dir, page.project_id, job_id)
     target.parent.mkdir(parents=True, exist_ok=True)
     fitted.save(target, "PNG")
@@ -159,21 +163,39 @@ def level_like(proposal: np.ndarray, original: np.ndarray) -> np.ndarray:
     return np.clip(scaled, 0, 255).astype(np.uint8)
 
 
+def match_colors(proposal: np.ndarray, original: np.ndarray) -> np.ndarray:
+    """Boje predloga kao u originalu (strane u boji): AI aplikacije vraćaju isprane boje, npr.
+    plavu pozadinu (1, 193, 255) kao (128, 213, 230). Svaki kanal se preslika tako da mu raspodela
+    bude kao u isečku originala (izjednačavanje histograma); redosled tonova ostaje."""
+    result = np.empty_like(proposal)
+    for channel in range(3):
+        values, inverse, counts = np.unique(
+            proposal[..., channel], return_inverse=True, return_counts=True
+        )
+        targets, target_counts = np.unique(original[..., channel], return_counts=True)
+        # sredina udela svakog tona predloga → ton originala na istom mestu raspodele
+        middle = (np.cumsum(counts) - counts / 2) / proposal[..., channel].size
+        target_quantiles = np.cumsum(target_counts) / original[..., channel].size
+        index = np.minimum(np.searchsorted(target_quantiles, middle), len(targets) - 1)
+        result[..., channel] = targets[index][inverse].reshape(proposal.shape[:2])
+    return result
+
+
 def from_app(
     data_dir: Path, page: Page, block: TextBlock, image: bytes, margin: int = 10
 ) -> tuple[bytes, dict]:
     """Slika iz AI aplikacije za blok (ručni tok), sa istim čišćenjem kao AI prepravka.
 
-    Uklopi se u isečak originala bez izobličenja, na crno-beloj strani dobije tonove originala, a
-    zadrži se samo okvir bloka i nova slova iz njega; izmišljen crtež dalje od natpisa se ne
-    prenosi. Vraća PNG i okvir zakrpe na stranici.
+    Uklopi se u isečak originala bez izobličenja, dobije tonove (crno-bela strana) ili boje
+    originala, a zadrži se samo okvir bloka i nova slova iz njega; izmišljen crtež dalje od
+    natpisa se ne prenosi. Vraća PNG i okvir zakrpe na stranici.
     """
     x0, y0 = max(0, round(block.x - margin)), max(0, round(block.y - margin))
     x1 = min(page.width, round(block.x + block.width + margin))
     y1 = min(page.height, round(block.y + block.height + margin))
     piece_bytes = patches.crop(data_dir, page, (x0, y0, x1 - x0, y1 - y0), False)
     with Image.open(io.BytesIO(piece_bytes)) as crop:
-        gray_page = crop.mode in ("L", "1", "LA")
+        gray_page = crop.mode in GRAY_MODES
         original = crop.convert("L" if gray_page else "RGB")
     with Image.open(io.BytesIO(image)) as received:
         proposal = received.convert(original.mode)
@@ -187,6 +209,8 @@ def from_app(
     )
     if gray_page:
         fitted = Image.fromarray(level_like(np.asarray(fitted), np.asarray(original)))
+    else:
+        fitted = Image.fromarray(match_colors(np.asarray(fitted), np.asarray(original)))
     inner = (round(block.x) - x0, round(block.y) - y0, round(block.width), round(block.height))
     mask = change_mask(np.asarray(original.convert("L")), np.asarray(fitted.convert("L")), inner)
     piece, (px, py, pw, ph) = masked(fitted, mask)

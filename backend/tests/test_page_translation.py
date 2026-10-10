@@ -1,7 +1,10 @@
+import sqlite3
+
 from factories import create_page, jpeg_bytes, zip_bytes
 from remote_mock import use_remote
 
 from app.models import TranslationMemory
+from app.services.openrouter import OpenRouterClient
 from worker.main import run_once
 
 
@@ -168,3 +171,33 @@ def test_local_model_name_is_rejected(client):
 
     assert response.status_code == 502
     assert "OpenRouter" in response.json()["detail"]
+
+
+def test_model_runs_without_holding_the_database(client, monkeypatch, settings):
+    # dok model radi, editor (druga konekcija) mora moći da piše; inače čeka 30 s i pada
+    page = create_page(client)
+    block = add_block(client, page, "AIUTO!")
+    add_block(client, page, "E' LUI!", y=100)
+    locked = []
+    original = OpenRouterClient._post
+
+    def post(self, body):
+        try:
+            with sqlite3.connect(settings.database_url.removeprefix("sqlite:///"), timeout=0) as db:
+                db.execute("BEGIN IMMEDIATE")
+        except sqlite3.OperationalError:
+            locked.append(True)
+        return original(self, body)
+
+    monkeypatch.setattr(OpenRouterClient, "_post", post)
+    answers = [[{"number": 1, "text": "U POMOĆ!"}, {"number": 2, "text": "TO JE ON!"}]]
+    llm(monkeypatch, [*answers, [{"number": 1, "text": "POMOZITE!"}]], [])
+
+    client.post(f"/api/pages/{page['id']}/translate", json={"model": "or:test/model"})
+    run_worker(client)
+    response = client.post(f"/api/blocks/{block['id']}/translate")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["translation"] == "POMOZITE!"
+    assert locked == []
+    assert client.get(f"/api/pages/{page['id']}/history").json()["undo"] == "prevod bloka"

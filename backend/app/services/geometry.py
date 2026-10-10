@@ -1,6 +1,21 @@
 """Pravougaonici u pikselima stranice: (x, y, širina, visina)."""
 
 Box = tuple[float, float, float, float]
+GRAY_MODES = ("L", "1", "LA")  # crno-bela strana: čisti se, krpi i izvozi siva
+
+
+def runs(values) -> list[tuple[int, int]]:
+    """Neprekinuti delovi (početak, kraj) gde je vrednost tačna, npr. projekcija mastila."""
+    found, start = [], None
+    for index, value in enumerate(values):
+        if value and start is None:
+            start = index
+        elif not value and start is not None:
+            found.append((start, index))
+            start = None
+    if start is not None:
+        found.append((start, len(values)))
+    return found
 
 
 def area(box: Box) -> float:

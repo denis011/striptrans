@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useState } from "react";
+import { Fragment, type ReactNode, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import {
   applySfx,
   type PageKind,
   type ProjectProgress,
+  type TranslationStatus,
   cancelJob,
+  pickModel,
   cleanProject,
   reshapeProject,
   prepareProject,
@@ -41,9 +43,7 @@ export default function ProjectPage() {
   const [chosenModel, setChosenModel] = useState<string | null>(() => loadSetting("striptrans.ocrModel", null));
   const ocrModels = useQuery({ queryKey: ["ocr-models"], queryFn: listOcrModels, staleTime: 60_000 });
   const modelNames = ocrModels.data?.models.map((model) => model.name) ?? [];
-  const processModel = [chosenModel, ocrModels.data?.default_model, modelNames[0]].find(
-    (name): name is string => !!name && modelNames.includes(name),
-  );
+  const processModel = pickModel(chosenModel, ocrModels.data);
 
   const project = useQuery({
     queryKey: ["project", projectId],
@@ -75,9 +75,7 @@ export default function ProjectPage() {
   const translationModels = useQuery({ queryKey: ["translation-models"], queryFn: listTranslationModels, staleTime: 60_000 });
   const translationNames = translationModels.data?.models.map((model) => model.name) ?? [];
   const [chosenTranslationModel, setChosenTranslationModel] = useState<string | null>(() => loadSetting("striptrans.translationModel", null));
-  const translationModel = [chosenTranslationModel, translationModels.data?.default_model, translationNames[0]].find(
-    (name): name is string => !!name && translationNames.includes(name),
-  );
+  const translationModel = pickModel(chosenTranslationModel, translationModels.data);
   const translateAll = useMutation({
     mutationFn: () => translateProject(projectId, translationModel, replaceTranslations),
     onSuccess: refresh,
@@ -196,7 +194,7 @@ export default function ProjectPage() {
           {processAll.isError && <span className="error">{processAll.error.message}</span>}
         </Step>
         <Step number={4} title="Prevedi" done={progress.blocks > 0 && !untranslated}
-          status={translationStatus(progress)}>
+          status={translationStatus(progress, projectId)}>
           <select aria-label="Model prevoda" value={translationModel ?? ""} onChange={(event) => setChosenTranslationModel(event.target.value)}>
             {translationNames.map((name) => (
               <option key={name} value={name}>
@@ -389,12 +387,51 @@ export default function ProjectPage() {
   );
 }
 
-/** Stanje prevoda u jednom redu: koliko čeka, koliko je nacrta, izmenjeno i odobreno. */
-function translationStatus(progress: ProjectProgress): string {
+const MAX_LISTED_PAGES = 10; // više stranica od ovoga se ne nabraja, vodi samo na prvu
+
+/**
+ * Stanje prevoda u jednom redu: koliko čeka, koliko je nacrta, izmenjeno i odobreno.
+ * Neodobreni brojevi su linkovi na prvi takav blok, a kad ih je malo, nabrojane su i stranice.
+ */
+function translationStatus(progress: ProjectProgress, projectId: number): ReactNode {
   const { none = 0, draft = 0, edited = 0, approved = 0 } = progress.translation;
   if (progress.blocks === 0) return "nema blokova sa tekstom";
-  const parts = [none && `${none} bez prevoda`, draft && `${draft} nacrta`, edited && `${edited} izmenjeno`, approved && `${approved} odobreno`];
-  return parts.filter(Boolean).join(" · ");
+  const blockUrl = (item: { page: number; block: number }) => `/projects/${projectId}/pages/${item.page}?block=${item.block}`;
+  const pendingPart = (status: TranslationStatus, label: string) => {
+    const items = (progress.pending ?? []).filter((item) => item.status === status);
+    if (items.length === 0) return label;
+    const byPage = items.filter((item, index) => index === 0 || items[index - 1].page !== item.page); // prvi blok svake stranice
+    return (
+      <>
+        <Link to={blockUrl(items[0])} title="Otvori prvi takav blok u editoru">
+          {label}
+        </Link>
+        {byPage.length <= MAX_LISTED_PAGES && (
+          <>
+            {" (str. "}
+            {byPage.map((item, index) => (
+              <Fragment key={item.page}>
+                {index > 0 && ", "}
+                <Link to={blockUrl(item)}>{item.page}</Link>
+              </Fragment>
+            ))}
+            {")"}
+          </>
+        )}
+      </>
+    );
+  };
+  const parts: [string, ReactNode][] = [];
+  if (none) parts.push(["none", pendingPart("none", `${none} bez prevoda`)]);
+  if (draft) parts.push(["draft", pendingPart("draft", `${draft} nacrta`)]);
+  if (edited) parts.push(["edited", pendingPart("edited", `${edited} izmenjeno`)]);
+  if (approved) parts.push(["approved", `${approved} odobreno`]);
+  return parts.map(([key, part], index) => (
+    <Fragment key={key}>
+      {index > 0 && " · "}
+      {part}
+    </Fragment>
+  ));
 }
 
 function exportStatus(progress: ProjectProgress, stale: boolean): string {
@@ -403,7 +440,7 @@ function exportStatus(progress: ProjectProgress, stale: boolean): string {
   return stale ? `poslednji izvoz ${when} — album je menjan posle toga` : `poslednji izvoz ${when}`;
 }
 
-function Step({ number, title, status, done = false, children }: { number: number; title: string; status: string; done?: boolean; children?: ReactNode }) {
+function Step({ number, title, status, done = false, children }: { number: number; title: string; status: ReactNode; done?: boolean; children?: ReactNode }) {
   return (
     <li className={`step${done ? " done" : ""}`}>
       <span className="step-number" aria-hidden>

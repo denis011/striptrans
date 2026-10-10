@@ -1,17 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   type BlockChanges,
   type LetteringStyle,
   type MaskStroke,
-  DEFAULT_DIALOGUE_FONT,
-  DEFAULT_SFX_FONT,
   type Job,
   type Patch,
   type Rect,
   type TextBlock,
   addDictionaryWord,
+  pickModel,
   createSfx,
   listStyles,
   previewTranslation,
@@ -27,7 +26,6 @@ import {
   deleteBlock,
   editMask,
   editPatchMask,
-  getAiPrompt,
   duplicateBlock,
   getJob,
   getPageReview,
@@ -41,7 +39,6 @@ import {
   ocrBlock,
   pageCleanUrl,
   pageImageUrl,
-  pageCropUrl,
   pageHistory,
   pageThumbnailUrl,
   processPage,
@@ -58,52 +55,28 @@ import {
   updateSeries,
   uploadFont,
 } from "../api";
-import { Ban, Boxes, Brush, CaseSensitive, Check, ChevronLeft, ChevronRight, Copy, ExternalLink, Download, Eraser, Eye, GalleryHorizontal, Image as ImageIcon, Languages, MousePointer2, PanelRight, Redo2, ScanText, Scissors, SquarePlus, Type, Undo2 } from "lucide-react";
+import { Boxes, Brush, CaseSensitive, Download, Eraser, Eye, Image as ImageIcon, Languages, MousePointer2, Redo2, ScanText, SquarePlus, Type, Undo2 } from "lucide-react";
 import BlockPanel from "../components/BlockPanel";
+import EditorHeader from "../components/EditorHeader";
 import FontPicker, { fontOption } from "../components/FontPicker";
 import type { SavedGlyph } from "../components/GlyphEditor";
 import Menu from "../components/Menu";
-import ThemeToggle from "../components/ThemeToggle";
 import { blockStyle, letterBlocks } from "../lettering/blocks";
-import { useFontMetrics } from "../lettering/fonts";
+import { pageFonts, useFontMetrics } from "../lettering/fonts";
 import { type ImageFormat, downloadBlob, pageFilename, renderPage } from "../export/renderPage";
 import JobStatus, { isActiveJob } from "../components/JobStatus";
 import PageCanvas, { type Fit } from "../components/PageCanvas";
+import PatchTools from "../components/PatchTools";
 import { moveBlock, toggleSelection } from "../editor/blocks";
 import { importRanks } from "../pageOrder";
 import { loadSetting, saveSetting } from "../storage";
-import { cropRect, nudgeForKey, positionForKey } from "../viewer/navigation";
+import { cropRect, nextPending, positionForKey } from "../viewer/navigation";
+import { isTyping, useShortcuts } from "../viewer/useShortcuts";
 import { patchAt } from "../viewer/patchHit";
-import type { FitMode } from "../viewer/zoom";
-
-const FIT_BUTTONS: [FitMode, string, string][] = [
-  ["page", "Cela stranica", "Cela"],
-  ["width", "Širina", "Širina"],
-  ["actual", "100 %", "1:1"],
-];
 
 type Mode = "select" | "draw" | "brush" | "text" | "patch";
 
-const NUDGE_SAVE_DELAY = 400;
-const AI_APP_URL = "https://gemini.google.com/app"; // AI aplikacija za ručni tok (pretplata korisnika)
-const AI_TAB_KEY = "striptrans.aiTabOpened"; // Gemini je u ovoj sesiji već otvoren iz editora
-
-function aiTabOpened(): boolean {
-  try {
-    return sessionStorage.getItem(AI_TAB_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function openAiApp() {
-  window.open(AI_APP_URL, "_blank");
-  try {
-    sessionStorage.setItem(AI_TAB_KEY, "1");
-  } catch {
-    // bez sessionStorage-a Gemini se otvara pri svakoj pripremi
-  }
-} // ms bez strelice pre čuvanja pomeraja
+const NUDGE_SAVE_DELAY = 400; // ms bez strelice pre čuvanja pomeraja
 
 const MODES = [
   { value: "select", label: "Izbor", short: "Izbor", Icon: MousePointer2 },
@@ -113,19 +86,13 @@ const MODES = [
   { value: "patch", label: "Zakrpe (P)", short: "Zakrpe", Icon: ImageIcon },
 ] as const;
 
-function isTyping(target: EventTarget | null): target is HTMLElement {
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement
-  );
-}
 
 export default function ViewerPage() {
   const params = useParams();
   const projectId = Number(params.projectId);
   const position = Number(params.position);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const [fit, setFit] = useState<Fit>({ mode: "page", token: 0 });
   const [compare, setCompare] = useState(true);
@@ -148,7 +115,6 @@ export default function ViewerPage() {
     if (next !== "patch") setSelectedPatchId(null);
   };
   const toggleMode = (next: Mode) => setMode(mode === next ? "select" : next);
-  const toggleModeFromKey = useEffectEvent(toggleMode);
   const [showPanel, setShowPanel] = useState<boolean>(() => loadSetting("striptrans.showPanel", true));
   const [showStrip, setShowStrip] = useState<boolean>(() => loadSetting("striptrans.showStrip", true));
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -186,8 +152,9 @@ export default function ViewerPage() {
   });
   const blocks = blocksQuery.data ?? [];
   const historyKey = ["history", pageId];
-  const setBlocks = (data: TextBlock[]) => queryClient.setQueryData(blocksKey, data);
-  const refreshHistory = () => queryClient.invalidateQueries({ queryKey: historyKey });
+  // odgovor stiže možda kad je otvorena druga stranica: upisuje se u stranicu na kojoj je kliknuto
+  const setBlocks = (data: TextBlock[], id = pageId) => queryClient.setQueryData(["blocks", id], data);
+  const refreshHistory = (id = pageId) => queryClient.invalidateQueries({ queryKey: ["history", id] });
   const refreshBlocks = () => {
     queryClient.invalidateQueries({ queryKey: blocksKey });
     refreshHistory();
@@ -219,16 +186,7 @@ export default function ViewerPage() {
   const fontsQuery = useQuery({ queryKey: ["fonts"], queryFn: listFonts, staleTime: 60_000 });
   const fontList = fontsQuery.data ?? [];
   const series = project.data?.series;
-  const pickFont = (key: string | null | undefined, fallback: string) =>
-    fontList.find((font) => font.key === key) ?? fontList.find((font) => font.key === fallback);
-  const dialogueFont = pickFont(series?.dialogue_font, DEFAULT_DIALOGUE_FONT);
-  const soundFont = pickFont(series?.sfx_font, DEFAULT_SFX_FONT);
-  // fontovi serijala i fontovi zadati pojedinačnim blokovima
-  const usedFonts = Object.fromEntries(
-    fontList
-      .filter((font) => font.key === dialogueFont?.key || font.key === soundFont?.key || blocks.some((block) => block.style?.font === font.key))
-      .map((font) => [font.key, font.url]),
-  );
+  const { dialogue: dialogueFont, sound: soundFont, used: usedFonts } = pageFonts(fontList, series, blocks);
   const fontMetrics = useFontMetrics(usedFonts);
   const pageLettering =
     page && dialogueFont && soundFont && fontMetrics?.[dialogueFont.key] && fontMetrics[soundFont.key]
@@ -265,42 +223,6 @@ export default function ViewerPage() {
   const cropBox = cropSource
     ? cropRect(cropSource, { width: page?.width ?? 0, height: page?.height ?? 0 })
     : { x: 0, y: 0, width: page?.width ?? 0, height: page?.height ?? 0 };
-  const copyAiPrompt = async () => {
-    if (!cropSource) return;
-    try {
-      const { prompt } = await getAiPrompt(cropSource.id);
-      await navigator.clipboard.writeText(prompt);
-      setNote("Uputstvo je kopirano: nalepi ga u AI aplikaciju (Ctrl+V), a sliku koju vrati kopiraj i nalepi ovde (Ctrl+V)");
-    } catch (error) {
-      setNote(`Uputstvo nije kopirano: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  };
-  // ručni AI tok bez fajlova: isečak originala ide u clipboard (Ctrl+V u AI aplikaciji), a slika koju
-  // aplikacija vrati se lepi u editor (Ctrl+V) i postaje zakrpa na izabranom bloku
-  const prepareForAi = async () => {
-    if (!cropSource) return;
-    const url = pageCropUrl(pageId, cropBox, false);
-    try {
-      // Promise<Blob> čuva dozvolu klika dok se isečak preuzima (Safari i Chrome)
-      const png = fetch(url).then((response) => response.blob());
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
-      setNote(
-        aiTabOpened()
-          ? "Isečak je kopiran: pređi na Gemini tab (Ctrl+Tab), Ctrl+V, pa „Uputstvo za AI“ i još jednom Ctrl+V"
-          : "Isečak je kopiran: u Gemini-ju Ctrl+V, pa „Uputstvo za AI“ i još jednom Ctrl+V",
-      );
-    } catch {
-      // pregledač bez slike u clipboard-u: isečak se preuzima kao fajl
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `isecak-blok-${cropSource.position}.png`;
-      link.click();
-      setNote("Isečak je preuzet kao fajl (pregledač ne dozvoljava sliku u clipboard-u)");
-    }
-    // Gemini prekida vezu sa tabom koji ga otvori (Cross-Origin-Opener-Policy), pa ga aplikacija ne može
-    // pronaći ni prebaciti u prvi plan: otvara se samo prvi put u sesiji, dalje ga korisnik bira sam
-    if (!aiTabOpened()) openAiApp();
-  };
   const changeStyle = (id: number, changes: Partial<LetteringStyle> | null) => {
     const block = blocks.find((item) => item.id === id);
     if (!block) return;
@@ -320,9 +242,7 @@ export default function ViewerPage() {
 
   const ocrModels = useQuery({ queryKey: ["ocr-models"], queryFn: listOcrModels, staleTime: 60_000 });
   const modelNames = ocrModels.data?.models.map((model) => model.name) ?? [];
-  const activeModel = [ocrModel, ocrModels.data?.default_model, modelNames[0]].find(
-    (name): name is string => !!name && modelNames.includes(name),
-  );
+  const activeModel = pickModel(ocrModel, ocrModels.data);
   const read = useMutation({
     mutationFn: async (ids: number[]) => {
       for (const id of ids) {
@@ -341,9 +261,7 @@ export default function ViewerPage() {
   const readBlocks = read.mutate;
   const translationModels = useQuery({ queryKey: ["translation-models"], queryFn: listTranslationModels, staleTime: 60_000 });
   const translationNames = translationModels.data?.models.map((model) => model.name) ?? [];
-  const activeTranslationModel = [translationModel, translationModels.data?.default_model, translationNames[0]].find(
-    (name): name is string => !!name && translationNames.includes(name),
-  );
+  const activeTranslationModel = pickModel(translationModel, translationModels.data);
   const translate = useMutation({
     mutationFn: async ({ id, shorter }: { id: number; shorter: boolean }) => {
       setTranslatingIds((current) => [...current, id]);
@@ -373,16 +291,19 @@ export default function ViewerPage() {
       queryClient.setQueryData<TextBlock[]>(blocksKey, (old) =>
         old?.map((block) => (block.id === id ? { ...block, ...changes } : block)),
       ),
-    onSettled: () => {
+    onSettled: (_data, _error, { changes }) => {
       refreshBlocks();
       queryClient.invalidateQueries({ queryKey: reviewKey });
+      // spisak neodobrenih blokova (dugme „sledeći neodobren") je u stanju projekta
+      if ("translation" in changes || "translation_status" in changes) queryClient.invalidateQueries({ queryKey: ["project", projectId] });
     },
   });
   const historyStep = useMutation({
     mutationFn: (kind: "undo" | "redo") => (kind === "undo" ? undoPage(pageId) : redoPage(pageId)),
-    onSuccess: (step, kind) => {
-      setBlocks(step.blocks);
-      queryClient.setQueryData(historyKey, { undo: step.undo, redo: step.redo });
+    onMutate: () => pageId,
+    onSuccess: (step, kind, id) => {
+      setBlocks(step.blocks, id);
+      queryClient.setQueryData(["history", id], { undo: step.undo, redo: step.redo });
       setSelectedIds((ids) => ids.filter((id) => step.blocks.some((block) => block.id === id)));
       queryClient.invalidateQueries({ queryKey: reviewKey });
       queryClient.invalidateQueries({ queryKey: patchesKey });
@@ -391,14 +312,13 @@ export default function ViewerPage() {
       if (step.action && kind === "redo") setNote(`Ponovljeno: ${step.action}`);
     },
   });
-  const stepHistory = useEffectEvent((kind: "undo" | "redo") => historyStep.mutate(kind));
-  const deletePatchFromKey = useEffectEvent((id: number) => removePatch.mutate(id));
   const newPatch = useMutation({
     // sa izabranim blokom zakrpa pada tačno na mesto izvezenog isečka, u boji stranice
     mutationFn: (file: File) => (cropSource ? addPatch(pageId, file, undefined, cropSource.id) : addPatch(pageId, file)),
-    onSuccess: (patch) => {
-      queryClient.setQueryData<Patch[]>(patchesKey, (old) => [...(old ?? []), patch]);
-      refreshHistory();
+    onMutate: () => pageId,
+    onSuccess: (patch, _file, id) => {
+      queryClient.setQueryData<Patch[]>(["patches", id], (old) => [...(old ?? []), patch]);
+      refreshHistory(id);
       setMode("patch");
       setSelectedPatchId(patch.id);
     },
@@ -439,17 +359,19 @@ export default function ViewerPage() {
   });
   const reorder = useMutation({
     mutationFn: (ids: number[]) => reorderBlocks(pageId, ids),
-    onSuccess: (data) => {
-      setBlocks(data);
-      refreshHistory();
+    onMutate: () => pageId,
+    onSuccess: (data, _variables, id) => {
+      setBlocks(data, id);
+      refreshHistory(id);
     },
   });
   const merge = useMutation({
     mutationFn: (ids: number[]) => mergeBlocks(pageId, ids),
-    onSuccess: (data) => {
-      setBlocks(data);
+    onMutate: () => pageId,
+    onSuccess: (data, _variables, id) => {
+      setBlocks(data, id);
       setSelectedIds(data.filter((block) => selectedIds.includes(block.id)).map((block) => block.id));
-      refreshHistory();
+      refreshHistory(id);
     },
   });
   const duplicate = useMutation({
@@ -461,9 +383,10 @@ export default function ViewerPage() {
   });
   const autoOrder = useMutation({
     mutationFn: () => autoOrderBlocks(pageId),
-    onSuccess: (data) => {
-      setBlocks(data);
-      refreshHistory();
+    onMutate: () => pageId,
+    onSuccess: (data, _variables, id) => {
+      setBlocks(data, id);
+      refreshHistory(id);
     },
   });
   const addWord = useMutation({
@@ -535,13 +458,25 @@ export default function ViewerPage() {
   });
   const removeBlocks = remove.mutate;
   const markReviewed = flags.mutate;
-  const mutationError = [create, update, remove, reorder, merge, duplicate, autoOrder, flags, read, processMutation, cleanMutation, maskMutation, savePage, cancelMutation, translate, translatePageMutation, cutTitleMutation, deleteGlyph].find((m) => m.error)?.error;
+  const mutationError = [
+    ...[create, update, remove, reorder, merge, duplicate, autoOrder, flags, read, processMutation, cleanMutation, maskMutation, savePage],
+    ...[cancelMutation, translate, translatePageMutation, cutTitleMutation, deleteGlyph, historyStep, newPatch, changePatchMutation],
+    ...[removePatch, addWord, confirmSfx, cleanBlockMutation, seriesFonts],
+  ].find((m) => m.error)?.error;
 
   useEffect(() => {
     setSelectedIds([]);
     setDrawMode(false);
     setPageJobId(null);
   }, [pageId]);
+  // ?block=ID (link iz koraka 4 ili „sledeći neodobren"): izaberi taj blok čim se blokovi učitaju
+  const wantedBlock = Number(searchParams.get("block")) || null;
+  useEffect(() => {
+    if (wantedBlock === null || !blocksQuery.data?.some((block) => block.id === wantedBlock)) return;
+    setSelectedIds([wantedBlock]);
+    setOnlyWarnings(false);
+    setSearchParams({}, { replace: true });
+  }, [wantedBlock, blocksQuery.data, setSearchParams]);
 
   const pageJobStatus = pageJob.data?.status;
   useEffect(() => {
@@ -551,7 +486,7 @@ export default function ViewerPage() {
     }
   }, [pageJobStatus, projectId, queryClient]);
 
-  const approveAndAdvance = useEffectEvent((wholePage: boolean) => {
+  const approveAndAdvance = (wholePage: boolean) => {
     const pending = blocks.filter((block) => block.translation && block.translation_status !== "approved");
     if (wholePage) {
       // Ctrl+Shift+Enter: odobri sve prevode, obeleži stranicu i pređi na sledeću
@@ -565,21 +500,30 @@ export default function ViewerPage() {
     changeBlock(current.id, { translation_status: "approved" });
     const next = pending.find((block) => block.position > current.position);
     setSelectedIds(next ? [next.id] : []);
-  });
+  };
+
+  // „sledeći neodobren blok" (U): kroz ceo album, ukrug
+  const unapproved = project.data?.progress.pending ?? [];
+  const goToPending = () => {
+    const next = nextPending(unapproved, position, blocks, selectedIds[0] ?? null);
+    if (!next) return;
+    if (next.page === position) {
+      setOnlyWarnings(false);
+      setSelectedIds([next.block]);
+    } else navigate(`/projects/${projectId}/pages/${next.page}?block=${next.block}`);
+  };
 
   // strelice pomeraju izabranu zakrpu ili blokove: odmah na ekranu, a na server (i u istoriju)
   // jednom, kad se strelice puste na trenutak ili kad se pređe na drugu stranicu
-  const nudgeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [nudges, setNudges] = useState(0); // broj pritisaka: svaki odlaže čuvanje
   const nudged = useRef<{ patches: Map<number, Rect>; blocks: Map<number, Rect> }>({ patches: new Map(), blocks: new Map() });
   const saveNudge = useEffectEvent(() => {
-    if (nudgeTimer.current) clearTimeout(nudgeTimer.current);
-    nudgeTimer.current = null;
     const { patches: movedPatches, blocks: movedBlocks } = nudged.current;
     nudged.current = { patches: new Map(), blocks: new Map() };
     for (const [id, { x, y }] of movedPatches) changePatch({ id, changes: { x, y } });
     for (const [id, { x, y }] of movedBlocks) changeBlock(id, { x, y });
   });
-  const nudge = useEffectEvent((dx: number, dy: number): boolean => {
+  const nudge = (dx: number, dy: number): boolean => {
     if (editPatches && selectedPatchId) {
       const moved = queryClient
         .setQueryData<Patch[]>(patchesKey, (old) =>
@@ -604,10 +548,14 @@ export default function ViewerPage() {
     } else {
       return false;
     }
-    if (nudgeTimer.current) clearTimeout(nudgeTimer.current);
-    nudgeTimer.current = setTimeout(saveNudge, NUDGE_SAVE_DELAY);
+    setNudges((n) => n + 1);
     return true;
-  });
+  };
+  useEffect(() => {
+    if (!nudges) return;
+    const timer = setTimeout(() => saveNudge(), NUDGE_SAVE_DELAY);
+    return () => clearTimeout(timer);
+  }, [nudges]);
   useEffect(() => () => saveNudge(), [pageId]);
 
   // slika nalepljena u editor (Ctrl+V) postaje zakrpa: na izabranom bloku ide na njegovo mesto
@@ -624,81 +572,36 @@ export default function ViewerPage() {
     return () => window.removeEventListener("paste", onPaste);
   }, []);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (isTyping(event.target)) {
-        if (event.key === "Escape") event.target.blur();
-        return;
+  useShortcuts({
+    approve: approveAndAdvance,
+    escape: () => {
+      if (drawMode || brush || editLettering || editPatches || selectedIds.length > 0) {
+        toggleMode("select");
+        setSelectedIds([]);
+      } else {
+        navigate(`/projects/${projectId}`);
       }
-      if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-        event.preventDefault();
-        approveAndAdvance(event.shiftKey);
-        return;
-      }
-      if (event.key === "Escape") {
-        if (drawMode || brush || editLettering || selectedIds.length > 0) {
-          toggleModeFromKey("select");
-          setSelectedIds([]);
-        } else {
-          navigate(`/projects/${projectId}`);
-        }
-        return;
-      }
-      if (event.key === "Delete" || event.key === "Backspace") {
-        if (editPatches && selectedPatchId) {
-          event.preventDefault();
-          deletePatchFromKey(selectedPatchId);
-          return;
-        }
-        if (selectedIds.length > 0) {
-          event.preventDefault();
-          removeBlocks(selectedIds);
-          return;
-        }
-      }
-      if (event.key.toLowerCase() === "z" && (event.ctrlKey || event.metaKey)) {
-        event.preventDefault();
-        stepHistory(event.shiftKey ? "redo" : "undo");
-        return;
-      }
-      if (event.key.toLowerCase() === "y" && (event.ctrlKey || event.metaKey)) {
-        event.preventDefault();
-        stepHistory("redo");
-        return;
-      }
-      if (event.key.toLowerCase() === "n" && !event.ctrlKey && !event.metaKey && !event.altKey) {
-        toggleModeFromKey("draw");
-        return;
-      }
-      if (event.key.toLowerCase() === "b" && !event.ctrlKey && !event.metaKey && !event.altKey) {
-        toggleModeFromKey("brush");
-        return;
-      }
-      if (event.key.toLowerCase() === "t" && !event.ctrlKey && !event.metaKey && !event.altKey) {
-        toggleModeFromKey("text");
-        return;
-      }
-      if (event.key.toLowerCase() === "p" && !event.ctrlKey && !event.metaKey && !event.altKey) {
-        toggleModeFromKey("patch");
-        return;
-      }
-      if (event.key.toLowerCase() === "r" && !event.ctrlKey && !event.metaKey && !event.altKey) {
-        if (selectedIds.length > 0) readBlocks(selectedIds);
-        return;
-      }
-      const delta = event.ctrlKey || event.metaKey || event.altKey ? null : nudgeForKey(event.key, event.shiftKey);
-      if (delta && nudge(delta[0], delta[1])) {
-        event.preventDefault();
-        return;
-      }
-      const next = positionForKey(event.key, position, count);
-      if (next === null) return;
-      event.preventDefault();
+    },
+    remove: () => {
+      if (editPatches && selectedPatchId) removePatch.mutate(selectedPatchId);
+      else if (selectedIds.length > 0) removeBlocks(selectedIds);
+      else return false;
+      return true;
+    },
+    history: (kind) => historyStep.mutate(kind),
+    toggleMode,
+    pending: goToPending,
+    read: () => {
+      if (selectedIds.length > 0) readBlocks(selectedIds);
+    },
+    nudge,
+    turnPage: (key) => {
+      const next = positionForKey(key, position, count);
+      if (next === null) return false;
       navigate(`/projects/${projectId}/pages/${next}`);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [position, count, projectId, navigate, drawMode, brush, editLettering, editPatches, selectedIds, selectedPatchId, removeBlocks, readBlocks]);
+      return true;
+    },
+  });
 
   useEffect(() => {
     if (!note) return;
@@ -742,82 +645,31 @@ export default function ViewerPage() {
 
   return (
     <div className="viewer">
-      <header className="editor-header">
-        <Link to="/" className="brand">
-          StripTrans
-        </Link>
-        <span className="divider" />
-        <Link to={`/projects/${projectId}`} className="project-link" title="Nazad na projekat (Esc)">
-          ← {projectTitle(project.data)}
-        </Link>
-        <div className="page-nav">
-          <button type="button" className="icon-button" onClick={() => go(position - 1)} disabled={position <= 1} aria-label="Prethodna stranica" title="Prethodna stranica (←)">
-            <ChevronLeft size={18} aria-hidden />
-          </button>
-          <span data-testid="page-indicator">
-            {position} / {count}
-          </span>
-          <button type="button" className="icon-button" onClick={() => go(position + 1)} disabled={position >= count} aria-label="Sledeća stranica" title="Sledeća stranica (→)">
-            <ChevronRight size={18} aria-hidden />
-          </button>
-          {importRank !== position && <span className="moved-from">(izvorno {importRank})</span>}
-        </div>
-        <div className="segmented">
-          {FIT_BUTTONS.map(([fitMode, label, short]) => (
-            <button
-              key={fitMode}
-              type="button"
-              aria-label={label}
-              title={label}
-              className={fit.mode === fitMode ? "active" : ""}
-              onClick={() => setFit((current) => ({ mode: fitMode, token: current.token + 1 }))}
-            >
-              {short}
-            </button>
-          ))}
-        </div>
-        <span className="spacer" />
-        <label className={`chip${page.ocr_reviewed ? " on" : ""}`} title="Tekst originala (OCR) na stranici je proveren">
-          <input type="checkbox" aria-label="Stranica pregledana" checked={page.ocr_reviewed} onChange={(event) => flags.mutate({ ocr_reviewed: event.target.checked })} />
-          {page.ocr_reviewed && <Check size={14} aria-hidden />} OCR proveren
-        </label>
-        <label className={`chip${page.translation_reviewed ? " on" : ""}`} title="Prevod na stranici je lektorisan (Ctrl+Shift+Enter)">
-          <input type="checkbox" aria-label="Stranica lektorisana" checked={page.translation_reviewed} onChange={(event) => flags.mutate({ translation_reviewed: event.target.checked })} />
-          {page.translation_reviewed && <Check size={14} aria-hidden />} Lektorisana
-        </label>
-        <label className={`chip skip${page.skip ? " on" : ""}`} title="Stranica se ne obrađuje (naslovna, reklama) i ulazi u album neizmenjena">
-          <input type="checkbox" aria-label="Preskoči stranicu" checked={page.skip} onChange={(event) => flags.mutate({ skip: event.target.checked })} />
-          {page.skip && <Ban size={14} aria-hidden />} Preskoči
-        </label>
-        <span className="divider" />
-        <button
-          type="button"
-          className="icon-button"
-          aria-pressed={showStrip}
-          aria-label="Sličice stranica"
-          title="Sličice stranica na dnu"
-          onClick={() => {
-            setShowStrip(!showStrip);
-            saveSetting("striptrans.showStrip", !showStrip);
-          }}
-        >
-          <GalleryHorizontal size={18} aria-hidden />
-        </button>
-        <button
-          type="button"
-          className="icon-button"
-          aria-pressed={showPanel}
-          aria-label="Panel blokova"
-          title="Panel blokova desno"
-          onClick={() => {
-            setShowPanel(!showPanel);
-            saveSetting("striptrans.showPanel", !showPanel);
-          }}
-        >
-          <PanelRight size={18} aria-hidden />
-        </button>
-        <ThemeToggle />
-      </header>
+      <EditorHeader
+        projectId={projectId}
+        title={projectTitle(project.data)}
+        position={position}
+        count={count}
+        importRank={importRank}
+        onGo={go}
+        onPending={goToPending}
+        pendingCount={unapproved.length}
+        pendingOnPage={blocks.some((block) => block.text !== "" && block.translation_status !== "approved")}
+        fit={fit}
+        onFit={setFit}
+        page={page}
+        onFlags={(changes) => flags.mutate(changes)}
+        showStrip={showStrip}
+        onStrip={(show) => {
+          setShowStrip(show);
+          saveSetting("striptrans.showStrip", show);
+        }}
+        showPanel={showPanel}
+        onPanel={(show) => {
+          setShowPanel(show);
+          saveSetting("striptrans.showPanel", show);
+        }}
+      />
       <div className="tools">
         <div className="segmented" role="group" aria-label="Režim rada">
           {MODES.map(({ value, label, short, Icon }) => (
@@ -896,85 +748,16 @@ export default function ViewerPage() {
           </div>
         )}
         {editPatches && (
-          <div className="mode-tools">
-            <label
-              className="button"
-              title={
-                cropSource
-                  ? `Slika ide na mesto isečka bloka ${cropSource.position}, bez izobličenja i iznad teksta (siva na crno-beloj strani)`
-                  : "Slika (PNG sa providnošću) preko stranice; izaberi blok da padne na njegovo mesto"
-              }
-            >
-              <ImageIcon size={16} aria-hidden /> {cropSource ? `Zakrpa na blok ${cropSource.position}…` : "Dodaj zakrpu…"}
-              <input
-                type="file"
-                accept="image/png,image/webp,image/jpeg"
-                hidden
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) newPatch.mutate(file);
-                  event.target.value = "";
-                }}
-              />
-            </label>
-            <a
-              className="button"
-              title="Isečak izabranog bloka (ili cele stranice) u punoj rezoluciji, za doradu van aplikacije"
-              href={pageCropUrl(pageId, cropBox, !!page.cleaned_at)}
-              download
-            >
-              <Scissors size={16} aria-hidden /> Izvezi isečak
-            </a>
-            {cropSource && (
-              <>
-              <button
-                type="button"
-                title="Kopira isečak originala (sa italijanskim natpisom); prvi put otvara i Gemini. Tamo Ctrl+V, pa „Uputstvo za AI“"
-                onClick={prepareForAi}
-              >
-                <Scissors size={16} aria-hidden /> Pripremi za AI
-              </button>
-              <button type="button" className="icon-button" aria-label="Otvori Gemini" title="Otvori Gemini u novom tabu (ako si ga zatvorio)" onClick={openAiApp}>
-                <ExternalLink size={16} aria-hidden />
-              </button>
-              </>
-            )}
-            {cropSource && (
-              <button
-                type="button"
-                aria-label="Kopiraj uputstvo za AI"
-                disabled={!cropSource.translation}
-                title={cropSource.translation ? "Uputstvo za AI aplikaciju (pretplata): zameni natpis prevodom istim slovima" : "Blok nema prevod"}
-                onClick={copyAiPrompt}
-              >
-                <Copy size={16} aria-hidden /> Uputstvo za AI
-              </button>
-            )}
-            {selectedPatch && (
-              <>
-                <input
-                  type="range"
-                  aria-label="Providnost zakrpe"
-                  title={`Providnost: ${Math.round(selectedPatch.opacity * 100)} %`}
-                  min={10}
-                  max={100}
-                  value={Math.round(selectedPatch.opacity * 100)}
-                  onChange={(event) => changePatch({ id: selectedPatch.id, changes: { opacity: Number(event.target.value) / 100 } })}
-                />
-                <label title="Zakrpa se crta i preko složenog prevoda">
-                  <input
-                    type="checkbox"
-                    checked={selectedPatch.above_text}
-                    onChange={(event) => changePatch({ id: selectedPatch.id, changes: { above_text: event.target.checked } })}
-                  />
-                  Iznad teksta
-                </label>
-                <button type="button" onClick={() => removePatch.mutate(selectedPatch.id)}>
-                  Obriši zakrpu
-                </button>
-              </>
-            )}
-          </div>
+          <PatchTools
+            page={page}
+            cropSource={cropSource}
+            cropBox={cropBox}
+            selectedPatch={selectedPatch}
+            onAdd={(file) => newPatch.mutate(file)}
+            onChange={(id, changes) => changePatch({ id, changes })}
+            onRemove={(id) => removePatch.mutate(id)}
+            onNote={setNote}
+          />
         )}
         <span className="divider" />
         <Menu label="Blokovi" icon={<Boxes size={16} aria-hidden />}>

@@ -8,13 +8,11 @@ from sqlalchemy.orm import Session
 
 from app.deps import SessionDep, SettingsDep
 from app.models import Patch, TextBlock
-from app.routers.pages import get_page
+from app.routers.pages import IMMUTABLE, get_page
 from app.schemas import PatchMaskEdit, PatchOut, PatchPatch
 from app.services import ai_patch, history, patches
 
 router = APIRouter(prefix="/api", tags=["patches"])
-
-IMMUTABLE = {"Cache-Control": "public, max-age=31536000, immutable"}
 
 
 def get_patch(session: Session, patch_id: int) -> Patch:

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -41,7 +43,7 @@ def client_llama_down(settings):
 def session_factory(settings):
     run_migrations(settings.database_url)
     engine = make_engine(settings.database_url)
-    yield sessionmaker(engine)
+    yield sessionmaker(engine, info={"data_dir": Path(settings.data_dir)})
     engine.dispose()
 
 

@@ -7,9 +7,10 @@ from llama_mock import llama_client, refused, reply
 
 from app.jobs import recover_interrupted_jobs
 from app.models import Job
+from app.routers import projects
 from app.services import page_processing
 from app.services.detector import Detection
-from worker.main import run_once
+from worker.main import claim_job, run_once
 
 DETECTIONS = [
     Detection("text_bubble", 0.9, (400, 100, 100, 50)),  # desno
@@ -179,6 +180,23 @@ def test_cancelling_queued_job_prevents_it_from_running(client):
 
     assert client.post(f"/api/jobs/{job['id']}/cancel").json()["status"] == "cancelled"
     assert run_worker(client, ocr_client([])) is False
+
+
+def test_cancel_of_claimed_job_asks_the_worker_to_stop(client, monkeypatch):
+    page = create_page(client)
+    job = client.post(f"/api/pages/{page['id']}/process").json()
+    read = projects.get_job
+
+    def read_then_claim(job_id, session):
+        found = read(job_id, session)  # api je video „u redu"…
+        with client.app.state.session_factory() as worker:
+            claim_job(worker)  # …a worker ga je baš tada preuzeo
+        return found
+
+    monkeypatch.setattr(projects, "get_job", read_then_claim)
+    job = client.post(f"/api/jobs/{job['id']}/cancel").json()
+
+    assert (job["status"], job["cancel_requested"]) == ("running", True)
 
 
 def test_running_job_stops_when_cancel_is_requested(client):

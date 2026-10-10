@@ -185,6 +185,26 @@ describe("ViewerPage", () => {
     expect(screen.getByTestId("location")).toHaveTextContent("/projects/1");
   });
 
+  it("Esc u režimu Zakrpe samo isključuje režim", async () => {
+    renderEditor(1);
+    await screen.findByTestId("page-indicator");
+
+    await userEvent.keyboard("p");
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.getByTestId("page-indicator")).toBeInTheDocument();
+    expect(screen.queryByTestId("location")).not.toBeInTheDocument();
+  });
+
+  it("neuspelo Ctrl+Z javlja grešku", async () => {
+    renderEditor(1, { "GET /api/pages/11/history": { undo: "izmena bloka", redo: null } });
+    await screen.findByTestId("page-indicator");
+
+    await userEvent.keyboard("{Control>}z{/Control}");
+
+    expect(await screen.findByText(/nema mock-a za POST \/api\/pages\/11\/undo/)).toBeInTheDocument();
+  });
+
   it("Ctrl+Z poništava poslednju izmenu, dugme Ponovi je vraća", async () => {
     const fetchMock = renderEditor(1, {
       "GET /api/pages/11/history": { undo: "izmena bloka", redo: null },
@@ -202,6 +222,29 @@ describe("ViewerPage", () => {
 
     expect(calls(fetchMock, "POST", "/api/pages/11/redo")).toHaveLength(1);
     expect(await screen.findByText("Ponovljeno: izmena bloka")).toBeInTheDocument();
+  });
+
+  it("odgovor na Ctrl+Z ostaje na svojoj stranici i kad se pređe na sledeću", async () => {
+    const fetchMock = renderEditor(2, {
+      "GET /api/pages/12/history": { undo: "izmena bloka", redo: null },
+      "POST /api/pages/12/undo": { action: "izmena bloka", undo: null, redo: "izmena bloka", blocks },
+    });
+    const respond = fetchMock.getMockImplementation()!;
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    fetchMock.mockImplementation(async (input, init) => {
+      if (String(input) === "/api/pages/12/undo") await gate;
+      return respond(input, init);
+    });
+    await screen.findByTestId("page-indicator");
+
+    await userEvent.keyboard("{Control>}z{/Control}");
+    await userEvent.keyboard("{ArrowRight}");
+    expect(screen.getByTestId("page-indicator")).toHaveTextContent("3 / 3");
+    release();
+
+    expect(await screen.findByText("Poništeno: izmena bloka")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Tekst bloka 1")).not.toBeInTheDocument();  // blokovi str. 2 nisu na str. 3
   });
 
   it("Poništi je isključeno kad istorija stranice je prazna", async () => {
@@ -579,6 +622,25 @@ describe("ViewerPage", () => {
     expect(await screen.findByTestId(`block-${translated[1].id}`)).toHaveAttribute("aria-selected", "true");
   });
 
+  it("dugme „Sledeći neodobren blok“ prelazi na stranicu iz spiska i bira taj blok", async () => {
+    const pending = [{ page: 1, block: blocks[1].id, status: "edited" as const }];
+    renderEditor(3, { "/api/projects/1": { ...project, progress: { ...project.progress, pending } } });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Sledeći neodobren blok" }));
+
+    expect(await screen.findByTestId(`block-${blocks[1].id}`)).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("page-indicator")).toHaveTextContent("1 / 3");
+  });
+
+  it("taster U bira sledeći neodobren blok na istoj stranici", async () => {
+    renderEditor(1);
+    await screen.findByTestId(`block-${blocks[0].id}`);
+
+    await userEvent.keyboard("u");
+
+    expect(screen.getByTestId(`block-${blocks[0].id}`)).toHaveAttribute("aria-selected", "true");
+  });
+
   it("obeležava stranicu kao lektorisanu", async () => {
     const fetchMock = renderEditor(1, { "PATCH /api/pages/11": { ...project.pages[0], translation_reviewed: true } });
 
@@ -834,6 +896,23 @@ describe("ViewerPage", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Prepravi AI-jem (blok 1)" }));
     await waitFor(() => expect(calls(fetchMock, "POST", `/api/blocks/${sign[0].id}/ai-patch`)).toHaveLength(1));
+  });
+
+  it("AI prepravka koja ne uspe ostavlja poruku o grešci", async () => {
+    const sign = [{ ...blocks[0], kind: "other" as const, text: "SHERIFF", translation: "ŠERIF", translation_status: "draft" as const }, blocks[1]];
+    const queued = { id: 9, type: "ai_patch", status: "queued", project_id: 1, progress: 0, total: 0, cancel_requested: false, error: null, result: null, created_at: "", updated_at: "" };
+    renderEditor(1, {
+      "GET /api/pages/11/blocks": sign,
+      [`GET /api/blocks/${sign[0].id}/ai-proposals`]: [],
+      [`POST /api/blocks/${sign[0].id}/ai-patch`]: queued,
+      "GET /api/jobs/9": { ...queued, status: "failed", error: "OpenRouter 402: nema kredita" },
+    });
+    await userEvent.click(await screen.findByTestId(`block-${sign[0].id}`));
+
+    await userEvent.click(await screen.findByRole("button", { name: "Prepravi AI-jem (blok 1)" }));
+
+    expect(await screen.findByText("AI prepravka nije uspela: OpenRouter 402: nema kredita")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Prepravi AI-jem (blok 1)" })).toHaveTextContent("Prepravi AI-jem");
   });
 
   it("naslov: bira drugi primerak slova i ponovo seče slova", async () => {

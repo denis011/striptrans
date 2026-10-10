@@ -16,6 +16,13 @@ class OpenRouterError(LlmError):
     """Status None: OpenRouter nije dostupan, posao čeka u redu."""
 
 
+def _body_error(error: object) -> OpenRouterError:
+    """Greška provajdera u telu odgovora; bez statusa bi posao zauvek čekao u redu."""
+    code = error.get("code") if isinstance(error, dict) else None
+    status = code if isinstance(code, int) else 502
+    return OpenRouterError(f"OpenRouter: {json.dumps(error)[:300]}", status)
+
+
 def is_remote(model: str) -> bool:
     return model.startswith(PREFIX)
 
@@ -52,10 +59,6 @@ class OpenRouterClient:
     def close(self) -> None:
         self._http.close()
 
-    def capabilities(self, model: str) -> list[str]:
-        """Mogućnosti se ne proveravaju; `think` se ne šalje."""
-        return ["completion", "remote"]
-
     def _post(self, body: dict) -> dict:
         try:
             response = self._http.post("/chat/completions", json=body)
@@ -67,7 +70,7 @@ class OpenRouterClient:
                 # neki modeli (glm-5.3-flash) ne daju da se razmišljanje ugasi
                 return self._post({k: v for k, v in body.items() if k != "reasoning"})
             status = exc.response.status_code
-            raise OpenRouterError(f"OpenRouter {status}: {text[:300]}") from exc
+            raise OpenRouterError(f"OpenRouter {status}: {text[:300]}", status) from exc
         except (httpx.HTTPError, ValueError) as exc:
             raise OpenRouterError(f"OpenRouter nije dostupan ({self.base_url}): {exc}") from exc
 
@@ -78,9 +81,7 @@ class OpenRouterClient:
         max_tokens: int = 200,
         images: list[bytes] | None = None,
         temperature: float | None = None,
-        think: bool | None = None,
         format: dict | None = None,
-        context_size: int | None = None,
     ) -> GenerateResult:
         name = remote_name(model)
         body: dict = {
@@ -101,7 +102,7 @@ class OpenRouterClient:
             }
         data = self._post(body)
         if "error" in data:  # OpenRouter greške provajdera stižu sa statusom 200
-            raise OpenRouterError(f"OpenRouter: {json.dumps(data['error'])[:300]}")
+            raise _body_error(data["error"])
         usage = data.get("usage") or {}
         self.prompt_tokens += usage.get("prompt_tokens", 0)
         self.completion_tokens += usage.get("completion_tokens", 0)
@@ -113,6 +114,7 @@ class OpenRouterClient:
             load_seconds=0.0,
             prompt_tokens_per_second=0.0,
             eval_tokens_per_second=0.0,
+            truncated=choices[0].get("finish_reason") == "length",
         )
 
     def edit_image(self, prompt: str, image: bytes, model: str) -> tuple[bytes, float | None]:
@@ -138,12 +140,12 @@ class OpenRouterClient:
         }
         data = self._post(body)
         if "error" in data:
-            raise OpenRouterError(f"OpenRouter: {json.dumps(data['error'])[:300]}")
+            raise _body_error(data["error"])
         message = ((data.get("choices") or [{}])[0].get("message")) or {}
         images = message.get("images") or []
         if not images:
             raise OpenRouterError(
-                f"model nije vratio sliku: {(message.get('content') or '')[:200]}"
+                f"model nije vratio sliku: {(message.get('content') or '')[:200]}", 502
             )
         url = images[0]["image_url"]["url"]
         return base64.b64decode(url.split(",", 1)[1]), (data.get("usage") or {}).get("cost")

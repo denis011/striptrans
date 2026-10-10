@@ -60,6 +60,23 @@ const EDGE_STEP = 0.02; // debljina obruba, u veličinama slova
 const COVER_EDGE = 0.3; // „Prekrij original": obrub dovoljno debeo da sakrije stara slova ispod novih
 
 /** Boja slova i obruba bloka (naslovna, kolor strane); „A" vraća automatsku boju. */
+/** A− / A+: veličina slova u odnosu na automatsku (obični blok i naslov). */
+function ScaleButtons({ scale, label, set }: { scale: number; label: (text: string) => string; set: (changes: Partial<LetteringStyle>) => void }) {
+  return (
+    <>
+      <button type="button" className="small" aria-label={label("Manja slova")} onClick={() => set({ scale: round(Math.max(0.3, scale - 0.05)) })}>
+        A−
+      </button>
+      <span className="detail" title="Veličina slova u odnosu na automatsku">
+        {Math.round(scale * 100)}%
+      </span>
+      <button type="button" className="small" aria-label={label("Veća slova")} onClick={() => set({ scale: round(Math.min(3, scale + 0.05)) })}>
+        A+
+      </button>
+    </>
+  );
+}
+
 function ColorControls({ block, set }: { block: TextBlock; set: (changes: Partial<LetteringStyle>) => void }) {
   const style = blockStyle(block);
   const label = (text: string) => `${text} (blok ${block.position})`;
@@ -146,15 +163,7 @@ function StyleControls({ block, onStyle, fonts }: { block: TextBlock; onStyle: N
   const set = (changes: Partial<LetteringStyle>) => onStyle(block.id, changes);
   return (
     <div className="style-controls" onClick={(event) => event.stopPropagation()}>
-      <button type="button" className="small" aria-label={label("Manja slova")} onClick={() => set({ scale: round(Math.max(0.3, style.scale - 0.05)) })}>
-        A−
-      </button>
-      <span className="detail" title="Veličina slova u odnosu na automatsku">
-        {Math.round(style.scale * 100)}%
-      </span>
-      <button type="button" className="small" aria-label={label("Veća slova")} onClick={() => set({ scale: round(Math.min(3, style.scale + 0.05)) })}>
-        A+
-      </button>
+      <ScaleButtons scale={style.scale} label={label} set={set} />
       <button type="button" className="small" aria-label={label("Manji prored")} title="Prored" onClick={() => set({ line_spacing: round(Math.max(0.5, style.line_spacing - 0.05)) })}>
         ≡−
       </button>
@@ -396,15 +405,7 @@ function TitleControls({
         <label title="Unutrašnjost slova (papir) pokriva crtež iza slova, kao u originalu">
           <input type="checkbox" aria-label={label("Neprovidna slova")} checked={style.opaque ?? !!title.hollow} onChange={(event) => set({ opaque: event.target.checked })} /> Neprovidna
         </label>
-        <button type="button" className="small" aria-label={label("Manja slova")} onClick={() => set({ scale: round(Math.max(0.3, style.scale - 0.05)) })}>
-          A−
-        </button>
-        <span className="detail" title="Veličina u odnosu na automatsku">
-          {Math.round(style.scale * 100)}%
-        </span>
-        <button type="button" className="small" aria-label={label("Veća slova")} onClick={() => set({ scale: round(Math.min(3, style.scale + 0.05)) })}>
-          A+
-        </button>
+        <ScaleButtons scale={style.scale} label={label} set={set} />
         <button type="button" className="small" aria-label={label("Manji razmak slova")} title="Razmak slova" onClick={() => set({ letter_spacing: round(Math.max(-0.5, style.letter_spacing - NUDGE)) })}>
           razmak −
         </button>

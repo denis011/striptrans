@@ -125,3 +125,57 @@ def test_more_brush_strokes_than_the_history_keeps(client, monkeypatch):
 
     pieces = list((Path(state.settings.data_dir) / "projects").rglob("history/*.png"))
     assert len(pieces) <= 2 * LIMIT  # isečci zaboravljenih poteza su obrisani
+
+
+def cleaned_page(client, monkeypatch):
+    import numpy as np
+
+    from app.services import cleaning
+    from worker.main import run_once
+
+    monkeypatch.setattr(
+        cleaning,
+        "text_mask",
+        lambda image, path: np.zeros(np.asarray(image).shape[:2], dtype=np.float32),
+    )
+    page = create_page(client, noise=True)
+    client.post(f"/api/pages/{page['id']}/clean")
+    run_once(client.app.state.session_factory, "w1", client.app.state.settings)
+    return page
+
+
+def stroke(client, page):
+    body = {"strokes": [{"mode": "add", "radius": 10, "points": [[50, 50], [80, 60]]}]}
+    assert client.post(f"/api/pages/{page['id']}/mask", json=body).status_code == 200
+
+
+def test_new_edit_removes_the_image_pieces_of_redo(client, monkeypatch):
+    from pathlib import Path
+
+    page = cleaned_page(client, monkeypatch)
+    stroke(client, page)
+    client.post(f"/api/pages/{page['id']}/undo")  # „Ponovi" sada čuva isečak poteza
+    projects = Path(client.app.state.settings.data_dir, "projects")
+    assert list(projects.rglob("history/*.png"))
+
+    block = {"x": 10, "y": 10, "width": 100, "height": 50, "text": "CIAO"}
+    client.post(f"/api/pages/{page['id']}/blocks", json=block)  # nova izmena briše „Ponovi"
+
+    assert list(projects.rglob("history/*.png")) == []
+
+
+def test_undo_brings_back_brush_strokes_after_cleaning_the_whole_page(client, monkeypatch):
+    from worker.main import run_once
+
+    page = cleaned_page(client, monkeypatch)
+    stroke(client, page)
+    stroked = client.get(f"/api/pages/{page['id']}/clean-image").content
+
+    client.post(f"/api/pages/{page['id']}/clean")
+    run_once(client.app.state.session_factory, "w1", client.app.state.settings)
+    assert client.get(f"/api/pages/{page['id']}/clean-image").content != stroked
+
+    step = client.post(f"/api/pages/{page['id']}/undo").json()
+
+    assert step["action"] == "čišćenje strane"
+    assert client.get(f"/api/pages/{page['id']}/clean-image").content == stroked

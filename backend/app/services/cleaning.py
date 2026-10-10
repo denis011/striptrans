@@ -17,8 +17,9 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.models import Page, TextBlock, utcnow
+from app.paths import save_atomic
 from app.services import history, title
-from app.services.geometry import Box
+from app.services.geometry import GRAY_MODES, Box
 from app.services.inpaint import artwork_mask, inpaint, needs_inpaint, text_angle
 from app.services.page_processing import sfx_model_path, unread
 from app.services.sfx import text_mask
@@ -254,16 +255,14 @@ def start_clean(data_dir: Path, page: Page) -> None:
     """Očišćena slika jednaka originalu i prazna maska (pre prvog čišćenja jednog bloka)."""
     clean_path, mask_path = clean_paths(page)
     with Image.open(data_dir / page.image_path) as original:
-        mode = "L" if original.mode in ("L", "1", "LA") else "RGB"
+        mode = "L" if original.mode in GRAY_MODES else "RGB"
         image = original.convert(mode)
         size = original.size
     for relative, picture in (
         (clean_path, image),
         (mask_path, Image.new("1", size, 0)),
     ):
-        target = data_dir / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        picture.save(target, optimize=True)
+        save_atomic(picture, data_dir / relative, optimize=True)
     page.clean_path, page.mask_path = clean_path, mask_path
 
 
@@ -284,6 +283,10 @@ def clean_page(
     """Očisti stranicu; uz `only` samo taj blok, na već očišćenu sliku (ostalo, i potezi četkicom,
     ostaje kako jeste)."""
     data_dir = Path(settings.data_dir)
+    if only is None:  # ceo original se čisti ponovo: Poništi vraća i poteze četkicom
+        whole = history.image_patch(data_dir, page, (0, 0, page.width, page.height))
+        history.record(session, page, "čišćenje strane", whole)
+        session.commit()  # LaMa radi bez zaključane baze
     chosen = [only] if only is not None else list(page.blocks)
     # nepročitan blok nema šta da upiše, pa se original ispod njega ne briše
     blocks = [
@@ -292,7 +295,7 @@ def clean_page(
         if not unread(block)
     ]
     with Image.open(data_dir / page.image_path) as original:
-        mode = "L" if original.mode in ("L", "1", "LA") else "RGB"  # crno-bele strane ostaju sive
+        mode = "L" if original.mode in GRAY_MODES else "RGB"  # crno-bele strane ostaju sive
         rgb = original.convert("RGB")
     pixels = np.asarray(rgb)
     saved = _saved_clean(data_dir, page) if only is not None else None
@@ -343,9 +346,7 @@ def clean_page(
         (mask_path, Image.fromarray(covered.astype(np.uint8) * 255).convert("1")),
     )
     for relative, image in outputs:
-        target = data_dir / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        image.save(target, optimize=True)
+        save_atomic(image, data_dir / relative, optimize=True)
     page.clean_path, page.mask_path = clean_path, mask_path
     session.flush()  # izmene blokova (oblik, podloga) dobijaju vreme pre vremena čišćenja
     page.cleaned_at = utcnow()
@@ -422,7 +423,7 @@ def edit_mask(session: Session, settings: Settings, page: Page, strokes: list[St
     """Primeni poteze četkice na masku stranice i ponovo izračunaj oblik oblačića."""
     data_dir = Path(settings.data_dir)
     with Image.open(data_dir / page.image_path) as source:
-        mode = "L" if source.mode in ("L", "1", "LA") else "RGB"
+        mode = "L" if source.mode in GRAY_MODES else "RGB"
         original = np.asarray(source.convert(mode))
     if page.clean_path and page.mask_path:
         with (
@@ -439,7 +440,7 @@ def edit_mask(session: Session, settings: Settings, page: Page, strokes: list[St
         if strokes
         else None
     )
-    history.record(session, page, "potez četkicom", patch, data_dir)
+    history.record(session, page, "potez četkicom", patch)
     for stroke in strokes:
         if stroke.mode == "inpaint":  # preko crteža: LaMa umesto boje okoline
             area = stroke_mask(covered.shape, stroke)
@@ -457,9 +458,7 @@ def edit_mask(session: Session, settings: Settings, page: Page, strokes: list[St
         (page.clean_path, Image.fromarray(cleaned)),
         (page.mask_path, Image.fromarray(covered.astype(np.uint8) * 255).convert("1")),
     ):
-        target = data_dir / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        image.save(target, optimize=True)
+        save_atomic(image, data_dir / relative, optimize=True)
     session.flush()
     page.cleaned_at = utcnow()
     session.commit()

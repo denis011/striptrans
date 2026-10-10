@@ -10,6 +10,7 @@ from sqlalchemy import select, update
 
 from app.deps import SessionDep, SettingsDep
 from app.models import Font, Series
+from app.routers.pages import IMMUTABLE
 from app.schemas import FontOut
 from app.services.fonts import (
     BUILTIN,
@@ -25,7 +26,6 @@ router = APIRouter(prefix="/api/fonts", tags=["fonts"])
 
 MAX_FONT_BYTES = 20 * 1024 * 1024
 FONT_TYPES = {b"\x00\x01\x00\x00": ".ttf", b"true": ".ttf", b"OTTO": ".otf"}
-IMMUTABLE = {"Cache-Control": "public, max-age=31536000, immutable"}
 
 
 def _user_out(font: Font) -> FontOut:
@@ -65,7 +65,7 @@ async def upload_font(
 ) -> FontOut:
     """Dodaj TTF/OTF; odbija se font kome fale srpska slova ili su mu glifovi prazni."""
     if kind not in ("dialogue", "sfx", "title"):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "vrsta mora biti dialogue ili sfx")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "vrsta mora biti dialogue, sfx ili title")
     data = await file.read(MAX_FONT_BYTES + 1)
     if len(data) > MAX_FONT_BYTES:
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "font je prevelik")

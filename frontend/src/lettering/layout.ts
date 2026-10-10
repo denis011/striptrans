@@ -45,6 +45,9 @@ export interface LayoutOptions {
 }
 
 export const CAP_TO_PITCH = 0.6; // izmereno na skenovima (IT 0,62, SR 0,57)
+// srpsko izdanje slaže redove gušće od originala: visina slova / razmak redova je 0,65 (medijana,
+// 6 brojeva, 114 oblačića) naspram 0,60 kod nas, pa je razmak redova 0,60 / 0,65 italijanskog
+export const LINE_PITCH = 0.92;
 const MIN_SCALE = 0.75; // slova se smanjuju najviše na 3/4 veličine originala
 const GROW_WIDTH = 0.15; // okvir originala sme da se proširi, jer je oblačić veći od teksta
 const GROW_HEIGHT = 0.35;
@@ -198,8 +201,21 @@ export function balancedLines(words: string[], widths: number[], size: number, m
   return best;
 }
 
-/** Složi tekst u okvir bloka; okvir se po potrebi malo proširi, a slova smanje tek na kraju. */
+/**
+ * Složi tekst u okvir bloka; okvir se po potrebi malo proširi, a slova smanje tek na kraju.
+ * Redovi se biraju sa razmakom originala, pa se primaknu oko iste sredine (`LINE_PITCH`): gušći
+ * prored ne sme da doda red i da tekst bude viši nego pre.
+ */
 export function layoutText(text: string, box: Box, measure: Measure, options: LayoutOptions): Layout {
+  const loose = layoutLines(text, box, measure, options);
+  const step = loose.size * loose.lineHeight * LINE_PITCH;
+  const height = loose.lines.length * step;
+  const top = loose.y + loose.height / 2 - height / 2;
+  const placements = loose.placements.map((item, i) => ({ ...item, y: top + i * step }));
+  return { ...loose, placements, lineHeight: loose.lineHeight * LINE_PITCH, y: top, height };
+}
+
+function layoutLines(text: string, box: Box, measure: Measure, options: LayoutOptions): Layout {
   const words = text.trim().split(/\s+/).filter(Boolean);
   // ručni prelomi: korisnik je sam rasporedio redove (Enter u prevodu)
   const manual = text.includes("\n") ? text.split("\n").map((line) => line.trim().split(/\s+/).join(" ")).filter(Boolean) : null;

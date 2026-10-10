@@ -11,6 +11,10 @@ COLUMN_2 = "LEVANTE FINO AL PORTO SICURO."
 def test_join_marks_breaks_and_keeps_hyphenated_words_whole():
     assert join(["IL FA-", "RO DEL PORTO"]) == "IL FARO ‖ DEL PORTO"
     assert join(["UNO", "DUE", "TRE"]) == "UNO ‖ DUE ‖ TRE"
+    # naglašen deo reči preko kolone: reč ostaje cela i naglašena
+    assert join(["IL *GIU-*", "DIZIO FINALE"]) == "IL *GIUDIZIO* ‖ FINALE"
+    assert join(["IL GIU-", "*DIZIO* FINALE"]) == "IL *GIUDIZIO* ‖ FINALE"
+    assert join(["IL *GIU-*", "*DIZIO* FINALE"]) == "IL *GIUDIZIO* ‖ FINALE"
 
 
 def test_split_uses_marks_or_source_lengths():

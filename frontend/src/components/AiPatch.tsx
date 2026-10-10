@@ -23,6 +23,7 @@ export default function AiPatch({ block }: { block: TextBlock }) {
   const [pending, setPending] = useState<number | null>(null); // predlog koji model upravo crta
   const [chosen, setChosen] = useState<number | null>(null);
   const [hidden, setHidden] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null); // posao propada pa nestaje iz upita
   const proposals = useQuery({ queryKey: ["ai-proposals", block.id], queryFn: () => listAiProposals(block.id) });
   const job = useQuery({
     queryKey: ["job", pending],
@@ -36,6 +37,7 @@ export default function AiPatch({ block }: { block: TextBlock }) {
     // gotov predlog ulazi u spisak plaćenih i odmah je izabran
     if (!finished) return;
     if (finished.status === "done") setChosen(finished.id);
+    if (finished.status === "failed") setFailure(finished.error ?? "nepoznata greška");
     queryClient.invalidateQueries({ queryKey: ["ai-proposals", block.id] });
     queryClient.invalidateQueries({ queryKey: ["project"] });
     setPending(null);
@@ -43,6 +45,7 @@ export default function AiPatch({ block }: { block: TextBlock }) {
   }, [finished, queryClient, block.id]);
   const request = useMutation({
     mutationFn: () => requestAiPatch(block.id, quality),
+    onMutate: () => setFailure(null),
     onSuccess: (created) => setPending(created.id),
   });
   const accept = useMutation({
@@ -75,7 +78,8 @@ export default function AiPatch({ block }: { block: TextBlock }) {
         </select>
       </div>
       {request.isError && <p className="error">{request.error.message}</p>}
-      {job.data?.status === "failed" && <p className="error">AI prepravka nije uspela: {job.data.error}</p>}
+      {failure && <p className="error">AI prepravka nije uspela: {failure}</p>}
+      {accept.isError && <p className="error">{accept.error.message}</p>}
       {selected && !hidden && (
         <div className="ai-patch-result">
           <img alt="Original" src={pageCropUrl(block.page_id, crop, false)} />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cropRect, fitInto, moveItem, nudgeForKey, positionForKey } from "./navigation";
+import { cropRect, moveItem, nextPending, nudgeForKey, positionForKey } from "./navigation";
 import { MAX_SCALE, fitView, screenRect, zoomAt } from "./zoom";
 
 const page = { width: 1801, height: 2457 };
@@ -111,12 +111,29 @@ describe("cropRect", () => {
   });
 });
 
-describe("fitInto", () => {
-  it("uklapa sliku u okvir bez izobličenja, na sredini", () => {
-    // Gemini: 1024 × 163 umesto isečka 1577 × 271 → iste širine, niža, centrirana po visini
-    const fitted = fitInto({ x: 127, y: 107, width: 1577, height: 271 }, { width: 1024, height: 163 });
-    expect(fitted.width).toBeCloseTo(1577);
-    expect(fitted.height).toBeCloseTo(251.0, 0);
-    expect(fitted.y).toBeCloseTo(107 + (271 - fitted.height) / 2);
+describe("nextPending", () => {
+  const block = (id: number, position: number, translation_status = "draft", text = "CIAO") => ({ id, position, text, translation_status });
+  const pending = [
+    { page: 2, block: 20 },
+    { page: 5, block: 50 },
+    { page: 9, block: 90 },
+  ];
+
+  it("ide na sledeći neodobren blok iste stranice, preskačući odobrene i prazne", () => {
+    const blocks = [block(1, 1), block(2, 2, "approved"), block(3, 3, "none", ""), block(4, 4, "edited")];
+    expect(nextPending(pending, 5, blocks, 1)).toEqual({ page: 5, block: 4 });
+    expect(nextPending(pending, 5, blocks, null)).toEqual({ page: 5, block: 1 });
+  });
+
+  it("posle poslednjeg na stranici prelazi na sledeću stranicu iz spiska", () => {
+    expect(nextPending(pending, 5, [block(50, 1)], 50)).toEqual({ page: 9, block: 90 });
+  });
+
+  it("na kraju albuma kreće ispočetka", () => {
+    expect(nextPending(pending, 9, [block(90, 1, "approved")], 90)).toEqual({ page: 2, block: 20 });
+  });
+
+  it("vraća null kad je sve odobreno", () => {
+    expect(nextPending([], 3, [block(1, 1, "approved")], null)).toBeNull();
   });
 });

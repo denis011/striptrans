@@ -45,8 +45,14 @@ def test_health_degraded_without_worker_heartbeat(client):
     assert body["worker"] == {"ok": False, "last_seen": None}
 
 
+def test_worker_in_a_long_model_call_is_not_down(client):
+    add_heartbeat(client, age_seconds=100)  # poziv OpenRouter-u traje do 90 s
+
+    assert client.get("/api/health").json()["worker"]["ok"] is True
+
+
 def test_health_marks_stale_heartbeat_as_down(client):
-    add_heartbeat(client, age_seconds=60)
+    add_heartbeat(client, age_seconds=180)
 
     body = client.get("/api/health").json()
 

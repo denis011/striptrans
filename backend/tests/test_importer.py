@@ -203,3 +203,30 @@ def test_prepare_page_rejects_huge_image(monkeypatch):
 
     with pytest.raises(ImportFailed, match="prevelika"):
         prepare_page("x.png", image_bytes("PNG", size=(20, 20)))
+
+
+def test_archive_bomb_stops_at_the_limit(tmp_path, monkeypatch):
+    monkeypatch.setattr(importer, "MAX_TOTAL_BYTES", 1024**2)
+    path = write_zip(tmp_path / "a.zip", [("1.jpg", bytes(10 * 1024**2))])  # zip: ~10 KB
+
+    with pytest.raises(ImportFailed, match="prevelika"):
+        collect_sources([(path, "a.zip")])
+
+
+def test_huge_pdf_page_is_rejected_before_drawing(tmp_path, monkeypatch):
+    import pypdfium2 as pdfium
+
+    monkeypatch.setattr(importer, "MAX_IMAGE_PIXELS", 1000)
+    monkeypatch.setattr(pdfium.PdfPage, "render", lambda *a, **k: pytest.fail("strana je crtana"))
+    (tmp_path / "v.pdf").write_bytes(vector_pdf())
+
+    with pytest.raises(ImportFailed, match="strana PDF-a je prevelika"):
+        collect_sources([(tmp_path / "v.pdf", "v.pdf")])
+
+
+def test_huge_embedded_pdf_image_is_rejected_before_decoding(tmp_path, monkeypatch):
+    monkeypatch.setattr(importer, "MAX_IMAGE_PIXELS", 1000)
+    (tmp_path / "p.pdf").write_bytes(img2pdf.convert(image_bytes("PNG", size=(300, 420))))
+
+    with pytest.raises(ImportFailed, match="prevelika \\(300×420\\)"):
+        collect_sources([(tmp_path / "p.pdf", "p.pdf")])

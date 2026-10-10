@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Export, Page, Project, TextBlock, utcnow
+from app.services.geometry import GRAY_MODES
 
 PDF_DPI = 300  # strana 1801×2457 px ≈ 15×21 cm (uobičajen format italijanskog stripa)
 EXTENSIONS = {"jpeg": "jpg", "png": "png"}
@@ -56,7 +57,7 @@ def page_file(data_dir: str, export: Export, index: int) -> Path:
 
 def _is_gray(path: Path) -> bool:
     with Image.open(path) as image:
-        return image.mode in ("L", "1", "LA")
+        return image.mode in GRAY_MODES
 
 
 def encode(image: Image.Image, gray: bool, image_format: str, quality: int) -> bytes:

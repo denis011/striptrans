@@ -48,11 +48,31 @@ export function cropRect(block: { x: number; y: number; width: number; height: n
   return { x, y, width: right - x, height: bottom - y };
 }
 
-/** Slika uklopljena u okvir bez izobličenja, na sredini (AI aplikacije vraćaju drugu veličinu i odnos strana). */
-export function fitInto(box: { x: number; y: number; width: number; height: number }, image: { width: number; height: number }) {
-  if (image.width <= 0 || image.height <= 0) return box;
-  const scale = Math.min(box.width / image.width, box.height / image.height);
-  const width = image.width * scale;
-  const height = image.height * scale;
-  return { x: box.x + (box.width - width) / 2, y: box.y + (box.height - height) / 2, width, height };
+export interface PendingBlock {
+  page: number;
+  block: number;
+}
+
+/**
+ * Sledeći neodobren blok posle izabranog: prvo na ovoj stranici, pa dalje redom i ukrug.
+ * Za tekuću stranicu važe živi blokovi (spisak sa servera kasni za upravo odobrenim).
+ */
+export function nextPending(
+  pending: PendingBlock[],
+  position: number,
+  blocks: { id: number; position: number; text: string; translation_status: string }[],
+  selectedId: number | null,
+): PendingBlock | null {
+  const open = blocks
+    .filter((block) => block.text !== "" && block.translation_status !== "approved")
+    .sort((a, b) => a.position - b.position);
+  const selected = blocks.find((block) => block.id === selectedId);
+  const here = open.find((block) => !selected || block.position > selected.position);
+  if (here) return { page: position, block: here.id };
+  const later = pending.find((item) => item.page > position);
+  if (later) return later;
+  const earlier = pending.find((item) => item.page < position);
+  if (earlier) return earlier;
+  const first = open.find((block) => block.id !== selectedId);
+  return first ? { page: position, block: first.id } : null;
 }

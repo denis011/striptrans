@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { balancedLines, blockPitch, breakLines, CAP_TO_PITCH, layoutBox, lineCounts, readOutline, layoutSound, layoutText, lineProfile, pagePitch } from "./layout";
+import { balancedLines, blockPitch, breakLines, CAP_TO_PITCH, LINE_PITCH, layoutBox, lineCounts, readOutline, layoutSound, layoutText, lineProfile, pagePitch } from "./layout";
 
 // „monospace" font: svaki znak je širok 0,6 veličine slova, velika slova su 0,7 visine
 const measure = (text: string) => text.length * 0.6;
@@ -16,11 +16,12 @@ describe("slaganje teksta", () => {
     expect(lineProfile(3, "rect")).toEqual([1, 1, 1]);
   });
 
-  it("veličina i razmak redova odgovaraju originalu", () => {
+  it("veličina slova odgovara originalu, a redovi su gušći kao u srpskom izdanju", () => {
     const layout = layoutText("TODE! JE LI SVE MIRNO?", { x: 0, y: 0, width: 400, height: 70 }, measure, options);
 
     expect(layout.size).toBeCloseTo(baseSize);
-    expect(layout.size * layout.lineHeight).toBeCloseTo(35);
+    expect(layout.size * layout.lineHeight).toBeCloseTo(35 * LINE_PITCH);
+    expect(LINE_PITCH).toBeCloseTo(0.92); // visina slova / razmak redova 0,65 kao u srpskom izdanju
     expect(layout.fits).toBe(true);
     expect(layout.lines.join(" ").replace(/- /g, "")).toBe("TODE! JE LI SVE MIRNO?");
   });
@@ -138,7 +139,7 @@ describe("slaganje teksta", () => {
     const spaced = layoutText("TODE! JE LI SVE MIRNO?", box, measure, { ...options, lineSpacing: 1.2 });
 
     expect(bigger.size).toBeCloseTo(baseSize * 1.3);
-    expect(spaced.lineHeight).toBeCloseTo((35 / baseSize) * 1.2); // veličinu slova i dalje bira automatika
+    expect(spaced.lineHeight).toBeCloseTo((35 / baseSize) * LINE_PITCH * 1.2); // veličinu slova i dalje bira automatika
   });
 
   it("pravougaonik detektora nije oblik oblačića: slaže se u elipsu okvira", () => {
@@ -435,5 +436,19 @@ describe("naglasak u slaganju", () => {
     const measure = emphasisMeasure((text: string) => text.length * 0.6);
     const lines = breakLines(["NE...", "OSEĆAM", "SE", "*BESKORISNO*."], [60, 60, 60, 60], 10, measure);
     expect(lines?.slice(-2)).toEqual(["*BESKORI-", "SNO*."]);
+  });
+});
+
+describe("gušći prored", () => {
+  it("ne menja prelom ni broj redova, samo ih primakne oko iste sredine", () => {
+    const text = "IPAK, NIKO OD NAS NIJE PROVERIO DA LI JE MOST ZAISTA PAO... JER ČIM SMO PREŠLI REKU, KRENULI SMO DALJE";
+    const box = { x: 0, y: 0, width: 300, height: 140 };
+    const layout = layoutText(text, box, measure, options);
+    const step = layout.size * layout.lineHeight;
+
+    expect(layout.lineHeight).toBeCloseTo((35 / baseSize) * LINE_PITCH);
+    expect(layout.placements[1].y - layout.placements[0].y).toBeCloseTo(step);
+    expect(layout.height).toBeCloseTo(layout.lines.length * step);
+    expect(layout.y + layout.height / 2).toBeCloseTo(box.height / 2, 0);
   });
 });

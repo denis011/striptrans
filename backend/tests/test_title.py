@@ -212,6 +212,20 @@ def test_deleted_block_keeps_its_letters_until_the_page_goes(client, settings):
     assert not folder.exists()
 
 
+def test_kind_change_keeps_the_letters_for_undo(client, settings):
+    page = upload_page(client, title_image())
+    block = title_block(client, page)
+    project_id = client.get("/api/projects").json()[0]["id"]
+    folder = title.title_dir(Path(settings.data_dir), project_id, block["id"])
+
+    client.patch(f"/api/blocks/{block['id']}", json={"kind": "speech"})
+    assert folder.exists()  # i ručno sastavljena slova bi inače nestala zauvek
+    client.post(f"/api/pages/{page['id']}/undo")
+
+    restored = client.get(f"/api/pages/{page['id']}/blocks").json()[0]
+    assert (restored["kind"], restored["title"]) == ("title", block["title"])
+
+
 def drawn_title(
     font_file: str, text="PASSACRO!", size=110, shear=0.0, outline=0, gap=10
 ) -> np.ndarray:

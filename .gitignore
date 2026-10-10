@@ -15,3 +15,6 @@ __pycache__/
 .env
 .pytest_cache/
 .ruff_cache/
+
+# zaostali fajl sesije (nastaje van aplikacije, ne ide u repo)
+*.ses

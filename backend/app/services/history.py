@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import Page, PageHistory, Patch, TextBlock, utcnow
+from app.paths import save_atomic
 from app.services import title
 
 LIMIT = 30  # koliko koraka unazad se pamti po stranici
@@ -105,14 +106,13 @@ def _paste_patch(data_dir: Path, page: Page, patch: dict) -> None:
             whole = image.copy()
         with Image.open(piece_path) as piece:
             whole.paste(piece, (int(x), int(y)))
-        whole.save(data_dir / relative, optimize=True)
+        save_atomic(whole, data_dir / relative, optimize=True)
         piece_path.unlink(missing_ok=True)
 
 
-def _forget(
-    session: Session, data_dir: Path | None, page: Page, entries: list[PageHistory]
-) -> None:
+def _forget(session: Session, page: Page, entries: list[PageHistory]) -> None:
     """Obriši zapise istorije stranice zajedno sa njihovim isečcima slike (potezi četkicom)."""
+    data_dir = session.info.get("data_dir")  # sessionmaker ga postavlja u api-ju i workeru
     for entry in entries:
         if entry.patch and data_dir is not None:
             folder = patch_dir(data_dir, page.project_id)
@@ -129,7 +129,6 @@ def _push(
     action: str,
     blocks: list[dict],
     patch: dict | None = None,
-    data_dir: Path | None = None,
 ) -> None:
     top = session.scalar(
         select(func.max(PageHistory.position)).where(
@@ -154,7 +153,7 @@ def _push(
         .order_by(PageHistory.position.desc())
         .offset(LIMIT)
     ).all()
-    _forget(session, data_dir, page, list(extra))
+    _forget(session, page, list(extra))
 
 
 def _pop(session: Session, page: Page, kind: str) -> PageHistory | None:
@@ -171,14 +170,13 @@ def record(
     page: Page,
     action: str,
     patch: dict | None = None,
-    data_dir: Path | None = None,
 ) -> None:
     """Zapamti stanje pre izmene. Zove se pre nego što se blokovi promene."""
-    _push(session, page, "undo", action, snapshot(session, page), patch, data_dir)
+    _push(session, page, "undo", action, snapshot(session, page), patch)
     stale = session.scalars(
         select(PageHistory).where(PageHistory.page_id == page.id, PageHistory.kind == "redo")
     ).all()
-    _forget(session, data_dir, page, list(stale))
+    _forget(session, page, list(stale))
 
 
 def _restore_patches(session: Session, page: Page, wanted: list[dict]) -> None:
@@ -241,7 +239,7 @@ def step(session: Session, page: Page, kind: str, data_dir: Path | None = None) 
     reverse = None
     if entry.patch and data_dir is not None:  # zatečeni isečak ide u suprotni niz
         reverse = image_patch(data_dir, page, entry.patch["box"])
-    _push(session, page, other, entry.action, snapshot(session, page), reverse, data_dir)
+    _push(session, page, other, entry.action, snapshot(session, page), reverse)
     _restore(session, page, entry.blocks, data_dir)
     _restore_patches(session, page, entry.patches or [])
     if entry.patch and data_dir is not None:

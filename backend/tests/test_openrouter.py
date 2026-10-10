@@ -53,8 +53,17 @@ def test_provider_error_with_status_200_raises():
 def test_http_error_raises():
     client = fake_client({"detail": "no"}, [], status=401)
 
-    with pytest.raises(OpenRouterError, match="401"):
+    with pytest.raises(OpenRouterError, match="401") as error:
         client.generate("prevedi", "or:z-ai/glm-5.3")
+    assert error.value.status == 401  # posao propada umesto da zauvek čeka u redu
+
+
+def test_provider_error_in_body_has_status():
+    client = fake_client({"error": {"code": 402, "message": "nema kredita"}}, [])
+
+    with pytest.raises(OpenRouterError, match="kredita") as error:
+        client.generate("prevedi", "or:z-ai/glm-5.3")
+    assert error.value.status == 402
 
 
 def test_translation_goes_only_to_openrouter(monkeypatch):

@@ -7,6 +7,7 @@ import numpy as np
 from factories import create_page
 from PIL import Image
 
+from app.models import Job
 from app.services import ai_patch, llm
 from app.services.openrouter import OpenRouterClient
 from worker.main import run_once
@@ -122,3 +123,33 @@ def test_project_progress_sums_the_cost_of_ai_proposals(client, monkeypatch):
     project_id = client.get("/api/projects").json()[0]["id"]
     progress = client.get(f"/api/projects/{project_id}").json()["progress"]
     assert (progress["ai_calls"], progress["ai_cost"]) == (2, 0.068)
+
+
+def test_washed_out_colors_of_a_proposal_are_matched_to_the_original():
+    """AI aplikacija vrati isprane boje: plava pozadina i crvena slova dobijaju boje originala."""
+    original = np.zeros((60, 200, 3), np.uint8)
+    original[:] = (1, 193, 255)  # plava pozadina
+    original[20:40, 20:120] = (182, 0, 1)  # crvena slova
+    proposal = np.zeros_like(original)
+    proposal[:] = (128, 213, 230)  # isprana pozadina
+    proposal[20:40, 60:170] = (155, 2, 2)  # nova slova, na drugom mestu i nešto duža
+
+    matched = ai_patch.match_colors(proposal, original)
+
+    assert np.abs(matched[5, 5].astype(int) - (1, 193, 255)).max() <= 2
+    assert np.abs(matched[30, 100].astype(int) - (182, 0, 1)).max() <= 2
+
+
+def test_undo_of_a_deleted_block_keeps_its_ai_proposals(client):
+    page = create_page(client)
+    block = title_block(client, page)
+    with client.app.state.session_factory() as session:
+        session.add(
+            Job(type="ai_patch", status="done", result={"block_id": block["id"], "cost": 0.03})
+        )
+        session.commit()
+
+    client.delete(f"/api/blocks/{block['id']}")
+    client.post(f"/api/pages/{page['id']}/undo")  # vraćen blok dobija novo vreme nastanka
+
+    assert len(client.get(f"/api/blocks/{block['id']}/ai-proposals").json()) == 1

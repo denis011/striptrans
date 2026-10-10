@@ -1,5 +1,4 @@
 import json
-import shutil
 from pathlib import Path
 from typing import Annotated
 
@@ -10,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.deps import LlamaDep, SessionDep, SettingsDep
 from app.models import Job, Page, TextBlock, TranslationStyle
-from app.routers.pages import get_page
+from app.routers.pages import IMMUTABLE, get_page
 from app.schemas import (
     AiPatchRequest,
     AiPromptOut,
@@ -44,7 +43,6 @@ from app.services.translation import is_too_long
 router = APIRouter(prefix="/api", tags=["blocks"])
 
 DUPLICATE_OFFSET = 20
-IMMUTABLE = {"Cache-Control": "public, max-age=31536000, immutable"}
 TITLE_FIELDS = ("kind", "text", "x", "y", "width", "height")  # izmena traži novo isecanje slova
 
 
@@ -149,10 +147,7 @@ def update_block(
     ):
         title.refresh(block, data_dir)
     elif block.kind != "title" and block.title is not None:
-        shutil.rmtree(
-            title.title_dir(data_dir, block.page.project_id, block.id), ignore_errors=True
-        )
-        block.title = None
+        block.title = None  # slike slova ostaju za „Poništi"; brišu se sa stranicom (title.sweep)
     session.commit()
     return block
 
@@ -328,7 +323,6 @@ def ocr_block(
 ) -> BlockOut:
     """Pročitaj tekst bloka vision modelom; pročitani tekst zamenjuje tekst bloka."""
     block = get_block(session, block_id)
-    history.record(session, block.page, "čitanje bloka")
     model = (data.model if data else None) or settings.ocr_model
     image_path = Path(settings.data_dir, block.page.image_path)
     try:
@@ -336,6 +330,7 @@ def ocr_block(
         result = read_block(llama, image_path, block, model, settings.ocr_max_tokens, language)
     except LlmError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+    history.record(session, block.page, "čitanje bloka")  # posle OCR-a, da baza ne čeka zaključana
     block.ocr_text = result.text
     block.text = result.text
     block.ocr_model = model
@@ -385,7 +380,6 @@ def translate_block_request(
     block = get_block(session, block_id)
     if not block.text.strip():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "blok nema tekst za prevod")
-    history.record(session, block.page, "prevod bloka")
     model = (data.model if data else None) or settings.translation_model
     try:
         return translate_block(session, block, model, shorter=bool(data and data.shorter))
@@ -409,7 +403,7 @@ def clean_block(block_id: int, session: SessionDep, settings: SettingsDep) -> Bl
     x1 = min(page.width, int(block.x + block.width) + CLEAN_BOUNDS)
     y1 = min(page.height, int(block.y + block.height) + CLEAN_BOUNDS)
     patch = history.image_patch(data_dir, page, (x0, y0, x1 - x0, y1 - y0))
-    history.record(session, page, "čišćenje bloka", patch, data_dir)
+    history.record(session, page, "čišćenje bloka", patch)
     clean_page(session, settings, page, only=block)
     return block
 
@@ -497,12 +491,9 @@ def ai_patch_request(
 @router.get("/blocks/{block_id}/ai-proposals")
 def ai_proposals(block_id: int, session: SessionDep) -> list[dict]:
     """Već plaćeni predlozi za blok, najnoviji prvi: mogu se ponovo prihvatiti bez novog poziva."""
-    block = get_block(session, block_id)
-    # predlozi napravljeni pre bloka pripadaju ranije obrisanom bloku sa istim brojem
+    get_block(session, block_id)  # 404 za nepostojeći blok
     jobs = session.scalars(
-        select(Job)
-        .where(Job.type == "ai_patch", Job.status == "done", Job.created_at >= block.created_at)
-        .order_by(Job.id.desc())
+        select(Job).where(Job.type == "ai_patch", Job.status == "done").order_by(Job.id.desc())
     ).all()
     return [
         {

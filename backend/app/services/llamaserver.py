@@ -169,9 +169,6 @@ class AutoOcrClient:
     def models(self) -> list[dict]:
         return self._call("models")
 
-    def capabilities(self, model: str) -> list[str]:
-        return ["completion", "vision"]
-
     def generate(self, *args, **kwargs) -> GenerateResult:
         return self._call("generate", *args, **kwargs)
 

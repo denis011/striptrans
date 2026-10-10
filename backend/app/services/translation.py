@@ -227,9 +227,12 @@ def is_too_long(source: str, translation: str) -> bool:
 
 
 def _generate(model: str, prompt: str) -> str:
-    result = llm.translation_client(model).generate(
-        prompt, model, MAX_TOKENS, temperature=TEMPERATURE, format=SCHEMA
-    )
+    client = llm.translation_client(model)
+    result = client.generate(prompt, model, MAX_TOKENS, temperature=TEMPERATURE, format=SCHEMA)
+    if result.truncated:  # razmišljanje modela troši istu granicu: jedan pokušaj sa većom
+        result = client.generate(
+            prompt, model, 4 * MAX_TOKENS, temperature=TEMPERATURE, format=SCHEMA
+        )
     return result.response
 
 

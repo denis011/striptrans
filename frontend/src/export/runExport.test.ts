@@ -9,7 +9,8 @@ const draw = vi.hoisted(() => ({ renderPage: vi.fn(async () => new Blob(["png"])
 
 vi.mock("../api", async (original) => ({ ...(await original<typeof import("../api")>()), ...api }));
 vi.mock("./renderPage", () => draw);
-vi.mock("../lettering/fonts", () => ({
+vi.mock("../lettering/fonts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lettering/fonts")>()),
   loadFontMetrics: vi.fn(async (fonts: Record<string, string>) =>
     Object.fromEntries(Object.keys(fonts).map((key) => [key, { family: key, measure: (t: string) => t.length * 0.6, capRatio: 0.7 }])),
   ),

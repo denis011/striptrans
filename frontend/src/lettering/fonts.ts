@@ -1,6 +1,7 @@
 // Učitavanje fontova u browser i merenje teksta na canvas-u (isti fontovi za prikaz i izvoz).
 
 import { useEffect, useState } from "react";
+import { DEFAULT_DIALOGUE_FONT, DEFAULT_SFX_FONT, type FontInfo, type Series, type TextBlock } from "../api";
 import type { Measure } from "./layout";
 
 export interface FontMetrics {
@@ -76,4 +77,16 @@ export function useFontMetrics(fonts: Record<string, string>): Record<string, Fo
     };
   }, [signature]);
   return ready;
+}
+
+/** Fontovi serijala (ili podrazumevani) i svi fontovi stranice: isti izbor za editor i izvoz. */
+export function pageFonts(fonts: FontInfo[], series: Pick<Series, "dialogue_font" | "sfx_font"> | undefined, blocks: TextBlock[]) {
+  const pick = (key: string | null | undefined, fallback: string) => fonts.find((font) => font.key === key) ?? fonts.find((font) => font.key === fallback);
+  const dialogue = pick(series?.dialogue_font, DEFAULT_DIALOGUE_FONT);
+  const sound = pick(series?.sfx_font, DEFAULT_SFX_FONT);
+  const own = new Set(blocks.map((block) => block.style?.font));
+  const used = Object.fromEntries(
+    fonts.filter((font) => font.key === dialogue?.key || font.key === sound?.key || own.has(font.key)).map((font) => [font.key, font.url]),
+  );
+  return { dialogue, sound, used };
 }

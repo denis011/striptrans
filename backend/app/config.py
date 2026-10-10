@@ -41,7 +41,8 @@ class Settings(BaseSettings):
     app_url: str = "http://localhost:5173"  # adresa editora; scenario za lektora vodi na stranicu
     worker_poll_interval: float = 2.0
     worker_retry_interval: float = 30.0  # pauza pre ponovnog pokušaja kad llama-server ne odgovara
-    worker_heartbeat_timeout: float = 15.0
+    # duže od najdužeg poziva OpenRouter-u (90 s): worker tada ne javlja heartbeat, a nije pao
+    worker_heartbeat_timeout: float = 120.0
 
 
 @lru_cache

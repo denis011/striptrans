@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.deps import SessionDep, SettingsDep
@@ -68,6 +68,22 @@ def _progress(session: Session, project: Project, data_dir: str) -> dict:
             .group_by(TextBlock.translation_status)
         ).all()
     )
+    # neodobreni blokovi redom (strana, blok): link u koraku 4 i „sledeći neodobren" u editoru
+    position = {page.id: page.position for page in active}
+    rows = session.execute(
+        select(
+            TextBlock.page_id, TextBlock.position, TextBlock.id, TextBlock.translation_status
+        ).where(
+            TextBlock.page_id.in_(ids),
+            TextBlock.text != "",
+            TextBlock.translation_status != "approved",
+        )
+    ).all()
+    rows = sorted(rows, key=lambda row: (position[row[0]], row[1]))
+    pending = [
+        {"page": position[page_id], "block": block_id, "status": status}
+        for page_id, _, block_id, status in rows
+    ]
     with_blocks = session.scalar(
         select(func.count(func.distinct(TextBlock.page_id))).where(TextBlock.page_id.in_(ids))
     )
@@ -122,6 +138,7 @@ def _progress(session: Session, project: Project, data_dir: str) -> dict:
         "unread": unread,
         "blocks": sum(counts.values()),
         "translation": counts,
+        "pending": pending,
         "proofread": sum(1 for page in active if page.translation_reviewed),
         "cleaned": sum(1 for page in active if page.cleaned_at),
         "exported_at": exported,
@@ -349,12 +366,21 @@ def process_project_request(
 
 
 @router.post("/jobs/{job_id}/cancel")
-def cancel_job(job_id: int, session: SessionDep) -> JobOut:
+def cancel_job(job_id: int, session: SessionDep, settings: SettingsDep) -> JobOut:
     job = get_job(job_id, session)
-    if job.status == "queued":
-        job.status = "cancelled"
-    elif job.status == "running":
-        job.cancel_requested = True
+    # uslovno: worker je posao možda preuzeo između čitanja i upisa
+    claimed = session.execute(
+        update(Job).where(Job.id == job_id, Job.status == "queued").values(status="cancelled")
+    )
+    if claimed.rowcount == 1:
+        if job.type == "export" and (export := session.get(Export, job.payload["export_id"])):
+            export.status, export.error = "failed", "otkazano"
+        if job.type == "import":
+            shutil.rmtree(inside(settings.data_dir, job.payload["upload_dir"]), ignore_errors=True)
+    else:
+        session.refresh(job)
+        if job.status == "running":
+            job.cancel_requested = True
     session.commit()
     return job
 

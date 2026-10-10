@@ -71,8 +71,8 @@ class PageOut(BaseModel):
     @computed_field
     @property
     def version(self) -> str:
-        """Oznaka fajla slike za adresu: slike se keširaju zauvek, a broj obrisane stranice
-        baza ponovo dodeljuje (novi projekat bi inače dobio stare slike iz keša)."""
+        """Oznaka fajla slike za adresu: slike se keširaju zauvek (pre migracije 0025 baza je
+        ponovo dodeljivala broj obrisane stranice, pa je adresa sa brojem dovodila staru sliku)."""
         return Path(self.image_path).stem[:12]
 
 
@@ -157,6 +157,7 @@ class ProjectProgress(BaseModel):
     ai_cost: float = 0  # njihov zbirni trošak ($)
     blocks: int = 0  # blokovi sa tekstom
     translation: dict[str, int] = {}  # none | draft | edited | approved
+    pending: list[dict] = []  # neodobreni blokovi redom: {page: pozicija, block: id, status}
     proofread: int = 0  # lektorisane stranice
     cleaned: int = 0  # očišćene stranice
     exported_at: datetime | None = None  # poslednji uspešan izvoz albuma
@@ -287,8 +288,7 @@ class PatchOut(BaseModel):
     @computed_field
     @property
     def url(self) -> str:
-        # adresa sadrži fajl slike i maske: slika se kešira zauvek, a broj obrisane zakrpe
-        # baza ponovo dodeljuje, pa bi nova zakrpa inače dobila staru sliku iz keša
+        # adresa sadrži fajl slike i maske: slika se kešira zauvek, a izmena maske menja adresu
         version = Path(self.path).stem
         if self.mask_path:
             version += f"-{Path(self.mask_path).stem}"

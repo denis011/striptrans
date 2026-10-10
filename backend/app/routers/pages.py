@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.deps import SessionDep, SettingsDep
-from app.models import Job, Page, Patch, TextBlock
+from app.models import Job, Page, PageHistory, Patch, TextBlock
 from app.schemas import HistoryOut, HistoryStep, JobOut, MaskEdit, PageOut, PagePatch
 from app.services import history, patches, title
 from app.services.cleaning import Stroke, edit_mask
@@ -131,8 +131,18 @@ def delete_page(page_id: int, session: SessionDep, settings: SettingsDep) -> Res
         select(TextBlock.id).join(Page).where(Page.project_id == page.project_id)
     )
     title.sweep(Path(settings.data_dir), page.project_id, set(live))
-    kept = session.execute(
-        select(Patch.path, Patch.mask_path).join(Page).where(Page.project_id == page.project_id)
-    )
-    patches.sweep(Path(settings.data_dir), page.project_id, {p for row in kept for p in row if p})
+    kept = {
+        path
+        for row in session.execute(
+            select(Patch.path, Patch.mask_path).join(Page).where(Page.project_id == page.project_id)
+        )
+        for path in row
+        if path
+    }
+    # obrisane zakrpe drugih strana žive još samo u istoriji, a „Poništi" ih vraća sa slikom
+    for saved in session.scalars(
+        select(PageHistory.patches).join(Page).where(Page.project_id == page.project_id)
+    ):
+        kept |= {entry.get(key) for entry in saved or [] for key in ("path", "mask_path")}
+    patches.sweep(Path(settings.data_dir), page.project_id, kept - {None})
     return Response(status_code=status.HTTP_204_NO_CONTENT)

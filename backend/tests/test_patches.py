@@ -235,3 +235,26 @@ def test_ai_app_image_on_a_block_is_fitted_leveled_and_cleaned(client, settings)
     if covered:
         with Image.open(io.BytesIO(client.get(patch["url"]).content)) as image:
             assert image.convert("LA").getpixel((92 - patch["x"], 92 - patch["y"]))[1] < 40
+
+
+def test_deleting_a_page_keeps_patch_files_that_undo_still_needs(client):
+    from factories import jpeg_bytes, zip_bytes
+
+    from worker.main import run_once
+
+    page = create_page(client)
+    archive = zip_bytes([("2.jpg", jpeg_bytes())])
+    client.post(
+        "/api/projects/1/imports",
+        data={"kind": "original"},
+        files=[("files", ("b.cbz", archive, "application/zip"))],
+    )
+    run_once(client.app.state.session_factory, "w1", client.app.state.settings)
+    other = client.get("/api/projects/1/pages").json()[1]
+    patch = upload(client, page, x=10, y=20, width=100, height=50)
+    client.delete(f"/api/patches/{patch['id']}")  # zakrpa sada postoji samo u istoriji
+
+    client.delete(f"/api/pages/{other['id']}")
+    client.post(f"/api/pages/{page['id']}/undo")
+
+    assert client.get(patch["url"]).status_code == 200

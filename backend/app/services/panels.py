@@ -8,7 +8,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from app.services.geometry import Box, intersection
+from app.services.geometry import Box, intersection, runs
 from app.services.reading_order import reading_order
 
 DARK_LEVEL = 160  # piksel tamniji od ovoga je mastilo
@@ -18,24 +18,14 @@ MIN_PANEL_SHARE = 0.02  # deo površine stranice
 MAX_DEPTH = 4
 
 
-def _gutters(ink: np.ndarray) -> list[tuple[int, int]]:
-    """Trake (početak, kraj) uzastopnih redova ili kolona bez mastila."""
-    runs, start = [], None
-    for index, empty in enumerate(ink <= GUTTER_MAX_INK):
-        if empty and start is None:
-            start = index
-        elif not empty and start is not None:
-            runs.append((start, index))
-            start = None
-    if start is not None:
-        runs.append((start, len(ink)))
-    return runs
-
-
 def _segments(ink: np.ndarray) -> list[tuple[int, int]]:
     """Delovi između belih traka dovoljne širine; bele trake na ivicama se odsecaju."""
     length = len(ink)
-    cuts = [(a, b) for a, b in _gutters(ink) if b - a >= MIN_GUTTER or a == 0 or b == length]
+    cuts = [
+        (a, b)
+        for a, b in runs(ink <= GUTTER_MAX_INK)
+        if b - a >= MIN_GUTTER or a == 0 or b == length
+    ]
     segments, position = [], 0
     for start, end in cuts:
         if start > position:

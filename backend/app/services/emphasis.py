@@ -14,6 +14,7 @@ import numpy as np
 from PIL import Image
 
 from app.models import TextBlock
+from app.services.geometry import runs
 
 MIN_LINE_HEIGHT = 0.4  # red niži od ovoliko medijane redova je ostatak (tačka, ivica oblačića)
 WORD_GAP = 0.45  # razmak veći od ovoliko visine reda deli reči
@@ -49,20 +50,6 @@ def letter_mask(crop: Image.Image, inner: tuple[int, int, int, int] | None = Non
             left, top, box_width, box_height = inner
             keep[index] = left <= cx <= left + box_width and top <= cy <= top + box_height
     return keep[labels]
-
-
-def _runs(profile: np.ndarray) -> list[tuple[int, int]]:
-    """Neprekinuti delovi gde je projekcija veća od nule: (početak, kraj)."""
-    runs, start = [], None
-    for index, value in enumerate(profile):
-        if value and start is None:
-            start = index
-        elif not value and start is not None:
-            runs.append((start, index))
-            start = None
-    if start is not None:
-        runs.append((start, len(profile)))
-    return runs
 
 
 def letter_height(mask: np.ndarray) -> float:
@@ -130,7 +117,7 @@ def block_crop(
 
 def lines_and_words(crop: Image.Image, mask: np.ndarray | None = None) -> list[Line]:
     mask = letter_mask(crop) if mask is None else mask
-    bands = _runs(mask.sum(axis=1) > 0)
+    bands = runs(mask.sum(axis=1) > 0)
     if not bands:
         return []
     typical = float(np.median([end - start for start, end in bands]))
@@ -139,7 +126,7 @@ def lines_and_words(crop: Image.Image, mask: np.ndarray | None = None) -> list[L
         if bottom - top < typical * MIN_LINE_HEIGHT:
             continue
         band = mask[top:bottom]
-        columns = _runs(band.sum(axis=0) > 0)
+        columns = runs(band.sum(axis=0) > 0)
         gap = (bottom - top) * WORD_GAP
         groups: list[list[tuple[int, int]]] = []
         for run in columns:

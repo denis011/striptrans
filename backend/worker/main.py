@@ -101,10 +101,16 @@ def run_once(
         job = claim_job(session)
         if job is None:
             return False
-        log.info("posao %s (%s) počinje", job.id, job.type)
+        job_id = job.id
+        log.info("posao %s (%s) počinje", job_id, job.type)
         client = llama or new_client(settings)
         try:
             requeued = run_job(session, job, settings, worker_id, client)
+        except OperationalError:
+            # poslednji upis nije prošao (zaključana baza): posao inače ostaje „u toku" do restarta
+            session.rollback()
+            _fail_running(session_factory, job_id, "baza je bila zaključana, pokreni posao ponovo")
+            raise
         finally:
             if llama is None:
                 client.close()
@@ -112,6 +118,16 @@ def run_once(
         time.sleep(settings.worker_retry_interval)
         return False
     return True
+
+
+def _fail_running(session_factory: sessionmaker, job_id: int, error: str) -> None:
+    with session_factory() as session:
+        session.execute(
+            update(Job)
+            .where(Job.id == job_id, Job.status == "running")
+            .values(status="failed", error=error, updated_at=utcnow())
+        )
+        session.commit()
 
 
 def run_once_safe(
@@ -131,7 +147,9 @@ def run_once_safe(
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     settings = get_settings()
-    session_factory = sessionmaker(make_engine(settings.database_url))
+    session_factory = sessionmaker(
+        make_engine(settings.database_url), info={"data_dir": Path(settings.data_dir)}
+    )
     worker_id = socket.gethostname()
     llama = new_client(settings)
 

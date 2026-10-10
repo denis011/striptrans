@@ -55,3 +55,24 @@ def test_locked_database_does_not_stop_worker(session_factory, settings, monkeyp
 
     monkeypatch.setattr(worker.main, "beat", locked)
     assert run_once_safe(session_factory, "w1", settings) is False
+
+
+def test_job_does_not_stay_running_when_its_last_write_fails(
+    session_factory, settings, monkeypatch
+):
+    def locked(*_):
+        raise OperationalError("COMMIT", {}, sqlite3.OperationalError("database is locked"))
+
+    def handler(ctx):
+        ctx.session.commit = locked  # poslednji upis posla (status „done") ne prolazi
+        return {}
+
+    monkeypatch.setitem(worker.main.HANDLERS, "ping", handler)
+    job_id = add_job(session_factory, type="ping")
+
+    assert run_once_safe(session_factory, "w1", settings) is False
+
+    with session_factory() as session:
+        job = session.get(Job, job_id)
+        assert job.status == "failed"
+        assert job.error == "baza je bila zaključana, pokreni posao ponovo"

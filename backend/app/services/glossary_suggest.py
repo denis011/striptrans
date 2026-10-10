@@ -53,6 +53,17 @@ def clean_term(value: str) -> str:
 
 
 EMPHASIS_BREAK = re.compile(r"-\*[ \t]*\n\s*\*")  # naglašena rastavljena reč: *ANCO-*\n*RA*
+# naglašen samo jedan deo (kratak deo reda nema naglasak): cela reč postaje naglašena
+HEAD_EMPHASIS = re.compile(r"-\*[ \t]*\n\s*([^\s*]+)")  # *ANCO-*\nRA → *ANCORA*
+TAIL_EMPHASIS = re.compile(r"([^\s*]+)-[ \t]*\n\s*\*")  # ANCO-\n*RA* → *ANCORA*
+
+
+def join_hyphenated(text: str) -> str:
+    """Spoji reči rastavljene na kraju reda, i kad je naglašen samo jedan deo."""
+    text = EMPHASIS_BREAK.sub("", text)
+    text = HEAD_EMPHASIS.sub(r"\1*", text)
+    text = TAIL_EMPHASIS.sub(r"*\1", text)
+    return re.sub(r"-[ \t]*\n\s*", "", text)
 
 
 def flatten(text: str, emphasis: bool = False) -> str:
@@ -61,10 +72,10 @@ def flatten(text: str, emphasis: bool = False) -> str:
     Oznake naglaska (`*reč*`) ostaju samo uz `emphasis` (prevod); glosar, memorija i lektura
     porede tekst bez njih.
     """
-    text = EMPHASIS_BREAK.sub("", text)
+    text = join_hyphenated(text)
     if not emphasis:
         text = text.replace("*", "")
-    return clean_term(re.sub(r"-[ \t]*\n\s*", "", text))
+    return clean_term(text)
 
 
 def _blocks(session: Session, page: Page) -> list[TextBlock]:

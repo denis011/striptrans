@@ -298,3 +298,36 @@ def test_marking_a_page_reviewed_approves_its_translations(client):
         b["translation_status"] for b in client.get(f"/api/pages/{page['id']}/blocks").json()
     ]
     assert statuses == ["approved", "approved", "none"]  # skidanje oznake ne poništava odobrenja
+
+
+def test_project_progress_lists_unapproved_blocks_in_page_order(client):
+    from factories import create_page
+
+    page = create_page(client)
+    url = f"/api/pages/{page['id']}/blocks"
+    box = {"x": 10, "y": 10, "width": 100, "height": 40, "kind": "speech"}
+    first = client.post(url, json={**box, "text": "UNO"}).json()
+    second = client.post(url, json={**box, "y": 80, "text": "DUE"}).json()
+    client.post(url, json={**box, "y": 150, "text": ""})  # prazan blok se ne broji
+    client.patch(f"/api/blocks/{first['id']}", json={"translation": "jedan"})
+    client.patch(f"/api/blocks/{second['id']}", json={"translation_status": "approved"})
+
+    progress = client.get("/api/projects/1").json()["progress"]
+
+    assert progress["pending"] == [{"page": 1, "block": first["id"], "status": "edited"}]
+
+
+def test_cancelled_import_removes_the_upload(client, settings):
+    project = create_project(client)
+    response = client.post(
+        f"/api/projects/{project['id']}/imports",
+        data={"kind": "original"},
+        files=[("files", ("ramon.cbz", zip_bytes([("1.jpg", jpeg_bytes())]), "application/zip"))],
+    )
+    uploads = Path(settings.data_dir, "uploads")
+    assert any(uploads.iterdir())
+
+    job = client.post(f"/api/jobs/{response.json()['id']}/cancel").json()
+
+    assert job["status"] == "cancelled"
+    assert not any(uploads.iterdir())

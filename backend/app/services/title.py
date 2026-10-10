@@ -315,9 +315,7 @@ def _letter_parts(
     roi = gray[max(y, 0) : y + h, max(x, 0) : x + w]
     if roi.size == 0:
         return roi, []
-    light = float(np.median(roi)) < 128
-    threshold, _ = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    ink = roi > threshold if light else roi < threshold
+    _, _, ink = _ink(roi)
     count, _, stats, centers = cv2.connectedComponentsWithStats(
         ink.astype(np.uint8), connectivity=8
     )
@@ -413,9 +411,7 @@ def find_letters(gray: np.ndarray, box: Box, text: str) -> Letters | None:
     band = (x, middle - BAND * typical, w, 2 * BAND * typical)
     # kurziv: slova se usprave (smicanje oko sredine okvira), da se ne preklapaju po širini
     band_roi = straight[int(max(band[1], 0)) : int(band[1] + band[3]), int(x) : int(x + w)]
-    threshold, _ = cv2.threshold(band_roi, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    light = float(np.median(band_roi)) < 128
-    ink = band_roi > threshold if light else band_roi < threshold
+    _, _, ink = _ink(band_roi)
     skew = _slant([ink]) if ink.any() else 0.0
     shear = np.array([[1.0, skew, -skew * center[1]], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
     forward = shear @ rotate
@@ -430,21 +426,40 @@ def find_letters(gray: np.ndarray, box: Box, text: str) -> Letters | None:
     return letters
 
 
-def _find_letters(gray: np.ndarray, box: Box, text: str) -> Letters | None:
-    """Isecanje slova vodoravnog naslova (videti `find_letters`)."""
-    height, width = gray.shape
-    x, y, w, h = box
-    x0, y0 = max(int(x - w * GROW), 0), max(int(y - h * GROW), 0)
-    x1, y1 = (
-        min(int(np.ceil(x + w * (1 + GROW))), width),
-        min(int(np.ceil(y + h * (1 + GROW))), height),
-    )
-    roi = gray[y0:y1, x0:x1]
-    if roi.size == 0:
-        return None
+@dataclass
+class _Parts:
+    """Delovi mastila naslova: oznake piksela, statistike delova i grupe delova po slovu."""
+
+    labels: np.ndarray
+    stats: np.ndarray
+    items: list[list[int]]
+    typical: float  # tipična visina slova
+    interiors: np.ndarray | None = None  # unutrašnjosti šupljih slova (nađenih po unutrašnjosti)
+    by_bodies: bool = False
+
+
+def _ink(roi: np.ndarray) -> tuple[bool, float, np.ndarray]:
+    """Svetla slova na tamnom (light), prag (Otsu) i mastilo slova."""
     light = float(np.median(roi)) < 128
     threshold, _ = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    ink = roi > threshold if light else roi < threshold
+    return light, threshold, roi > threshold if light else roi < threshold
+
+
+def _bounds(stats: np.ndarray, members: list[int]) -> tuple[int, int, int, int]:
+    return (
+        min(stats[m, 0] for m in members),
+        min(stats[m, 1] for m in members),
+        max(stats[m, 0] + stats[m, 2] for m in members),
+        max(stats[m, 1] + stats[m, 3] for m in members),
+    )
+
+
+def _parts(
+    roi: np.ndarray, ink: np.ndarray, light: bool, box: Box, origin: tuple[int, int], text: str
+) -> _Parts | None:
+    """Delovi mastila u okviru, grupisani po slovu: tačke, kvačice i dvotačke idu uz svoje slovo."""
+    x, y, w, h = box
+    x0, y0 = origin
     count, labels, stats, centers = cv2.connectedComponentsWithStats(
         ink.astype(np.uint8), connectivity=8
     )
@@ -527,24 +542,40 @@ def _find_letters(gray: np.ndarray, box: Box, text: str) -> Letters | None:
             if across >= OVERLAP * min(u_w, l_w) and 0 <= gap <= typical:
                 groups[upper] += groups.pop(lower)
                 break
+    return _Parts(labels, stats, list(groups.values()), typical, interiors, by_bodies)
 
-    def bounds(members: list[int]) -> tuple[int, int, int, int]:
-        return (
-            min(stats[m, 0] for m in members),
-            min(stats[m, 1] for m in members),
-            max(stats[m, 0] + stats[m, 2] for m in members),
-            max(stats[m, 1] + stats[m, 3] for m in members),
-        )
 
+def _split_at(parts: _Parts, index: int, cut: int) -> None:
+    """Preseci grupu `index` u stupcu `cut` (od leve ivice grupe): desni deo postaje novo slovo."""
+    members = parts.items[index]
+    left, top, right, bottom = _bounds(parts.stats, members)
+    new = int(parts.labels.max()) + 1
+    region = parts.labels[top:bottom, left + cut : right]
+    region[np.isin(region, members)] = new
+    parts.stats = np.vstack([parts.stats, _part_stats(parts.labels == new)])
+    for member in members:
+        parts.stats[member] = _part_stats(parts.labels == member)
+    parts.items[index] = [member for member in members if parts.stats[member, cv2.CC_STAT_AREA]]
+    parts.items.insert(index + 1, [new])
+
+
+def _column(parts: _Parts, members: list[int]) -> np.ndarray:
+    """Mastilo grupe po stupcima, od leve ivice grupe."""
+    left, top, right, bottom = _bounds(parts.stats, members)
+    return np.isin(parts.labels[top:bottom, left:right], members).sum(axis=0)
+
+
+def _regroup(parts: _Parts, expected: list[str]) -> None:
+    """Broj grupa izjednači sa brojem slova teksta: spoji slomljena slova, preseci spojena."""
+    typical = parts.typical
+    items = parts.items
     # slomljeno slovo: delovi jedan iznad drugog ili jedan u drugom se spajaju, dok broj ne
     # odgovara tekstu (slova koja se samo uvlače jedno pod drugo se preklapaju manje)
-    expected = _labels(text)
-    items = list(groups.values())
     while len(items) > len(expected):
         best, pair = (MERGE, 0.0), None
         for a_index, a_members in enumerate(items):
             for b_index in range(a_index + 1, len(items)):
-                a, b = bounds(a_members), bounds(items[b_index])
+                a, b = _bounds(parts.stats, a_members), _bounds(parts.stats, items[b_index])
                 ratio = _ranges_overlap(a[0], a[2], b[0], b[2]) / max(
                     1, min(a[2] - a[0], b[2] - b[0])
                 )
@@ -555,45 +586,39 @@ def _find_letters(gray: np.ndarray, box: Box, text: str) -> Letters | None:
             break
         items[pair[0]] = items[pair[0]] + items.pop(pair[1])
 
+    def width(members: list[int]) -> int:
+        left, _, right, _ = _bounds(parts.stats, members)
+        return right - left
+
     # spojena slova (dodiruju se serifom ili ukrasom, npr. MA na str. 3): najširi oblik se seče
     # na najtanjem mestu srednjeg dela, dok broj ne odgovara tekstu
     while items and len(items) < len(expected):
-        widths = [bounds(members)[2] - bounds(members)[0] for members in items]
+        widths = [width(members) for members in items]
         widest = int(np.argmax(widths))
         others = [w for i, w in enumerate(widths) if i != widest] or widths
         if widths[widest] < JOINED * float(np.median(others)):
             break
-        members = items[widest]
-        left, top, right, bottom = bounds(members)
-        column = np.isin(labels[top:bottom, left:right], members).sum(axis=0)
+        column = _column(parts, items[widest])
         low, high = int(len(column) * 0.25), int(len(column) * 0.75)
         cut = low + int(np.argmin(column[low:high]))
         if column[cut] > THIN * float(np.median(column[column > 0])):
             break
-        new = int(labels.max()) + 1
-        region = labels[top:bottom, left + cut : right]
-        region[np.isin(region, members)] = new
-        stats = np.vstack([stats, _part_stats(labels == new)])
-        for member in members:
-            stats[member] = _part_stats(labels == member)
-        items[widest] = [member for member in members if stats[member, cv2.CC_STAT_AREA]]
-        items.insert(widest + 1, [new])
+        _split_at(parts, widest, cut)
 
     # rukom pisan potpis: uska slova se dodiruju (D i I), pa oblik nije mnogo širi od ostalih.
     # Poravnanje oblika sa slovima teksta po širinama kaže koji oblik nosi dva slova i gde ga seći
     while items and len(items) < len(expected):
-        order = sorted(range(len(items)), key=lambda k: _reading_key(bounds(items[k]), typical))
-        widths = [bounds(items[k])[2] - bounds(items[k])[0] for k in order]
-        plan = _cover(widths, expected)
+        order = sorted(
+            range(len(items)), key=lambda k: _reading_key(_bounds(parts.stats, items[k]), typical)
+        )
+        plan = _cover([width(items[k]) for k in order], expected)
         if plan is None:
             break
         spot = next((k for k, chars in zip(order, plan, strict=True) if len(chars) > 1), None)
         if spot is None:
             break
         chars = plan[order.index(spot)]
-        members = items[spot]
-        left, top, right, bottom = bounds(members)
-        column = np.isin(labels[top:bottom, left:right], members).sum(axis=0)
+        column = _column(parts, items[spot])
         share = _char_width(chars[0]) / sum(_char_width(char) for char in chars)
         aim = len(column) * share
         low, high = max(1, int(0.15 * len(column))), min(len(column) - 1, int(0.85 * len(column)))
@@ -603,24 +628,18 @@ def _find_letters(gray: np.ndarray, box: Box, text: str) -> Letters | None:
         # slova D je takođe tanka, ali je dalje od granice slova nego pravi procep
         ink_scale = max(1.0, float(np.median(column[column > 0])))
         scores = [column[c] / ink_scale + 2 * abs(c - aim) / len(column) for c in range(low, high)]
-        cut = low + int(np.argmin(scores))
-        new = int(labels.max()) + 1
-        region = labels[top:bottom, left + cut : right]
-        region[np.isin(region, members)] = new
-        stats = np.vstack([stats, _part_stats(labels == new)])
-        for member in members:
-            stats[member] = _part_stats(labels == member)
-        items[spot] = [member for member in members if stats[member, cv2.CC_STAT_AREA]]
-        items.insert(spot + 1, [new])
+        _split_at(parts, spot, low + int(np.argmin(scores)))
 
-    # redovi naslova (gore → dole), pa slova u redu (levo → desno)
-    items.sort(key=lambda members: bounds(members)[1])
+
+def _rows(items: list[list[int]], stats: np.ndarray) -> list[list[list[int]]]:
+    """Redovi naslova (gore → dole), pa slova u redu (levo → desno)."""
+    items = sorted(items, key=lambda members: _bounds(stats, members)[1])
     rows: list[list[list[int]]] = []
     for members in items:
-        _, top, _, bottom = bounds(members)
+        _, top, _, bottom = _bounds(stats, members)
         for row in rows:
-            row_top = min(bounds(m)[1] for m in row)
-            row_bottom = max(bounds(m)[3] for m in row)
+            row_top = min(_bounds(stats, m)[1] for m in row)
+            row_bottom = max(_bounds(stats, m)[3] for m in row)
             if _ranges_overlap(top, bottom, row_top, row_bottom) >= 0.5 * min(
                 bottom - top, row_bottom - row_top
             ):
@@ -629,7 +648,31 @@ def _find_letters(gray: np.ndarray, box: Box, text: str) -> Letters | None:
         else:
             rows.append([members])
     for row in rows:
-        row.sort(key=lambda members: (bounds(members)[0] + bounds(members)[2]) / 2)
+        row.sort(key=lambda members: (_bounds(stats, members)[0] + _bounds(stats, members)[2]) / 2)
+    return rows
+
+
+def _find_letters(gray: np.ndarray, box: Box, text: str) -> Letters | None:
+    """Isecanje slova vodoravnog naslova (videti `find_letters`)."""
+    height, width = gray.shape
+    x, y, w, h = box
+    x0, y0 = max(int(x - w * GROW), 0), max(int(y - h * GROW), 0)
+    x1, y1 = (
+        min(int(np.ceil(x + w * (1 + GROW))), width),
+        min(int(np.ceil(y + h * (1 + GROW))), height),
+    )
+    roi = gray[y0:y1, x0:x1]
+    if roi.size == 0:
+        return None
+    light, threshold, ink = _ink(roi)
+    parts = _parts(roi, ink, light, box, (x0, y0), text)
+    if parts is None:
+        return None
+    expected = _labels(text)
+    _regroup(parts, expected)
+    labels, stats, typical = parts.labels, parts.stats, parts.typical
+    interiors, by_bodies = parts.interiors, parts.by_bodies
+    rows = _rows(parts.items, stats)
 
     all_mask = np.isin(labels, [m for row in rows for members in row for m in members])
     near = cv2.dilate(all_mask.astype(np.uint8), np.ones((11, 11), np.uint8)).astype(bool)
@@ -649,11 +692,11 @@ def _find_letters(gray: np.ndarray, box: Box, text: str) -> Letters | None:
     fills = np.zeros_like(all_mask)  # ispune svih slova (za čišćenje celog slova)
     paper_pixels: list[np.ndarray] = []
     for r, row in enumerate(rows):
-        heights = [bounds(m)[3] - bounds(m)[1] for m in row]
+        heights = [_bounds(stats, m)[3] - _bounds(stats, m)[1] for m in row]
         tall = [m for m, hh in zip(row, heights, strict=True) if hh >= 0.6 * max(heights)]
-        baseline = float(np.median([bounds(m)[3] for m in tall])) + y0
+        baseline = float(np.median([_bounds(stats, m)[3] for m in tall])) + y0
         for members in row:
-            left, top, right, bottom = bounds(members)
+            left, top, right, bottom = _bounds(stats, members)
             cx0, cy0 = max(left - PAD, 0), max(top - PAD, 0)
             cx1, cy1 = min(right + PAD, roi.shape[1]), min(bottom + PAD, roi.shape[0])
             own = np.isin(labels[cy0:cy1, cx0:cx1], members)
@@ -699,11 +742,11 @@ def _find_letters(gray: np.ndarray, box: Box, text: str) -> Letters | None:
     ]
     left = min(b[0] for b in ink_boxes)
     right = max(b[2] for b in ink_boxes)
-    top = float(min(bounds(m)[1] for row in rows for m in row) + y0)
-    bottom = float(max(bounds(m)[3] for row in rows for m in row) + y0)
+    top = float(min(_bounds(stats, m)[1] for row in rows for m in row) + y0)
+    bottom = float(max(_bounds(stats, m)[3] for row in rows for m in row) + y0)
     caps = []
     for row in rows:
-        heights = [bounds(m)[3] - bounds(m)[1] for m in row]
+        heights = [_bounds(stats, m)[3] - _bounds(stats, m)[1] for m in row]
         caps += [hh for hh in heights if hh >= 0.6 * max(heights)]
     cap_height = float(np.median(caps))
     median_gap = float(np.median(gaps)) if gaps else 0.1 * cap_height
@@ -980,8 +1023,7 @@ def _style(letters: Letters, font_path: Path, rough: bool = True) -> _Style:
     if not tall:
         return style
     raw = [glyph.alpha > 127 for glyph in tall]
-    slant = _slant(raw)
-    hollow = letters.hollow or _hollow(letters)
+    slant, hollow = letters.slant, letters.hollow  # izmerio ih je `complete`, jednom za sve fontove
 
     def solid(glyph: Glyph, mask: np.ndarray) -> np.ndarray:
         """Celo slovo: kontura i unutrašnjost (ispuna je sigurnija od popunjavanja rupa konture)."""

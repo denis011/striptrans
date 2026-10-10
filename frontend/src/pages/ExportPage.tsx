@@ -48,6 +48,10 @@ export default function ExportPage() {
         fonts: fonts.data,
         onProgress: setProgress,
         cancelled: () => cancelRef.current,
+      }).catch(async (error: unknown) => {
+        // prekinut ili neuspeo nedovršen izvoz bi sat vremena ostao „u toku"
+        await deleteExport(created.id).catch(() => undefined);
+        throw error;
       });
       setStage("packing");
       let job = await finishExport(created.id);

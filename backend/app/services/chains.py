@@ -8,9 +8,10 @@ dužini originala.
 import re
 
 from app.models import TextBlock
+from app.services.glossary_suggest import join_hyphenated
 
 MARK = "‖"
-HYPHENATED = re.compile(r"(\w)-$")
+HYPHENATED = re.compile(r"\w-\*?$")  # i naglašen deo: *GIU-*
 
 
 def chains(blocks: list[TextBlock]) -> list[list[TextBlock]]:
@@ -41,8 +42,8 @@ def join(parts: list[str]) -> str:
     parts = list(parts)
     for index in range(len(parts) - 1):
         first, _, rest = parts[index + 1].partition(" ")
-        if HYPHENATED.search(parts[index]) and first[:1].isalpha():
-            parts[index] = parts[index][:-1] + first
+        if HYPHENATED.search(parts[index]) and first.lstrip("*")[:1].isalpha():
+            parts[index] = join_hyphenated(f"{parts[index]}\n{first}")
             parts[index + 1] = rest
     return f" {MARK} ".join(part.strip() for part in parts)
 

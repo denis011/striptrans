@@ -153,8 +153,8 @@ probni strip, očisti ga i izveze u CBZ i PDF, pa ga obriše.
 | Status: llama-server nedostupan | `make llm` (pokreće ga na Windows-u). Ako i dalje ne radi, pogledaj `C:\llm-bench\llama-server.log` i firewall (1.2). Poslovi OCR-a za to vreme čekaju u redu i nastavljaju sami. |
 | OCR je spor (desetine sekundi po bloku) | u logu servera treba da piše da je model na Vulkan uređaju (grafička); proveri da Ollama ili drugi program ne drži VRAM. |
 | Nema modela u listi za prevod | proveri `OPENROUTER_API_KEY` u `.env`, pa pokreni `docker compose up -d` (`restart` ne učitava novi `.env`) |
-| Prevod javlja grešku 402 | na OpenRouter-u je potrošen kredit |
-| Worker: crveno na statusnoj strani | `docker compose logs worker`, pa `docker compose up -d` |
+| Prevod javlja grešku 402 | na OpenRouter-u je potrošen kredit; posao propada sa tom porukom (ne čeka u redu), pa ga posle dopune pokreni ponovo |
+| Worker: crveno na statusnoj strani (posle 2 minuta bez javljanja; dugi pozivi modelu nisu pad) | `docker compose logs worker`, pa `docker compose up -d` |
 | Port 5173 ili 8000 je zauzet | zatvori drugi program koji ga koristi ili promeni port u `docker-compose.yml` |
 | Stari font posle zamene | osveži stranu (Ctrl+F5) |
 
@@ -228,7 +228,7 @@ zelenu kvačicu umesto broja. Preskočene stranice se ne broje.
 | **1. Uvezi stranice** | broj stranica originala i reference | (fajlovi se prevlače u polje iznad sličica) |
 | **2. Označi stranice koje se preskaču** | koje su preskočene | (dugme ⊘ na sličici) |
 | **3. Pronađi blokove i pročitaj tekst (OCR)** | koliko stranica je obrađeno; ako je obrada bila prekinuta, piše i koliko je blokova ostalo nepročitano — „Obradi ceo projekat" ih dočita, ne dirajući ostale | OCR model, „Zameni postojeće blokove" (briše ručno ispravljene blokove — pažljivo), „Obradi ceo projekat" |
-| **4. Prevedi** | koliko blokova je bez prevoda, u nacrtu, izmenjeno, odobreno | model prevoda, „Ponovo prevedi nacrte", „Prevedi ceo projekat", „Onomatopeje po glosaru", „Glosar onomatopeja" |
+| **4. Prevedi** | koliko blokova je bez prevoda, u nacrtu, izmenjeno, odobreno; neodobreni brojevi su linkovi na prvi takav blok, a kad je stranica do 10, nabrojane su i one (klik otvara blok u editoru) | model prevoda, „Ponovo prevedi nacrte", „Prevedi ceo projekat", „Onomatopeje po glosaru", „Glosar onomatopeja" |
 | **5. Lektura** | koliko stranica je lektorisano | Scenario, CSV, Glosar |
 | **6. Očisti originalni tekst** | koliko stranica je očišćeno | „Očisti ceo projekat" |
 | **7. Doteraj slaganje u editoru** | — | Otvori pregled, „Ponovo izmeri oblačiće" (aktivno kad je bar jedna strana očišćena) |
@@ -299,7 +299,8 @@ ostavlja otvorenim.
   mišem, ima providnost i prekidač „Iznad teksta", a briše se tasterom Delete. Ulazi u izvoz isto kao u editoru;
 - **Poništi** i **Ponovi** (strelice u traci alata, Ctrl+Z i Ctrl+Shift+Z) vraćaju poslednjih 30 izmena na
   stranici: tekst, prevod, okvire, tip bloka, stil, slova naslova, brisanje i spajanje blokova, obradu i prevod
-  stranice, kao i poteze četkicom. Istorija se pamti na serveru, pa ostaje i posle osvežavanja stranice, a svaka
+  stranice, poteze četkicom i ponovno čišćenje cele strane (vraća i poteze četkicom koje je čišćenje prepisalo;
+  prvo čišćenje strane vraća samo blokove). Istorija se pamti na serveru, pa ostaje i posle osvežavanja stranice, a svaka
   stranica ima svoju;
 - klik bira blok, a Shift ili Ctrl + klik bira više blokova. Okvir se pomera i menja ručkama;
 - meni Blokovi (Spoji, Dupliraj, Obriši, Automatski redosled) radi nad izabranim blokovima. U listi se redosled
@@ -318,6 +319,8 @@ ostavlja otvorenim.
 - „Samo upozorenja" (meni Prikaz) prikazuje samo blokove sa upozorenjima;
 - **Ctrl+Enter** odobrava prevod bloka i prelazi na sledeći neodobren blok;
 - **Ctrl+Shift+Enter** odobrava sve prevode na stranici, označava stranicu kao lektorisanu i prelazi na sledeću;
+- **U** (ili dugme ⏩ pored broja stranice) skače na sledeći neodobren blok u celom albumu: prvo na ovoj stranici,
+  pa na sledećim, a posle poslednjeg kreće ispočetka. Tako se brzo nađe i jedan zaostali „izmenjen" ili nacrt blok;
 - Enter u polju prevoda je ručni prelom reda u oblačiću: tu obavezno počinje nov red, a deo koji je duži od
   oblačića se dalje prelama sam (dovoljan je jedan Enter, npr. pre reda uz obod šešira). Kad je Enter na kraju
   svakog reda, raspored ostaje tačno kako je upisan; red koji ne staje je crven, a panel kaže koji je.
@@ -362,7 +365,8 @@ ostavlja otvorenim.
   van polja snima, **Esc** odustaje, Enter je nov red. Snimanje je isto kao iz panela (prevod se piše velikim
   slovima, status prelazi u „izmenjeno"), pa se poništava sa Ctrl+Z;
 - u panelu izabranog bloka:
-  - A− / A+ menja veličinu slova, a dugmad za prored razmak između redova;
+  - A− / A+ menja veličinu slova, a dugmad za prored razmak između redova (polazni prored oblačića je oko 8 %
+    gušći od originala, kao u srpskim izdanjima; prelom redova ostaje isti, redovi se samo primaknu);
   - poravnanje: ⇤ levo, ↔ centar, ⇥ desno, ☰ obostrano (poslednji red ostaje centriran); levo i desno
     poravnanje daje svim redovima istu ivicu;
   - ispravljanje rotacije i font samo za taj blok;
@@ -450,6 +454,7 @@ ostavlja otvorenim.
 | dvoklik na tekst ili blok | izmena prevoda na samoj slici |
 | Ctrl+Enter | snimi tekst (u polju na slici) ili odobri prevod bloka i pređi na sledeći |
 | Ctrl+Shift+Enter | odobri celu stranicu i pređi na sledeću |
+| U | sledeći neodobren blok (i na drugim stranicama) |
 | Ctrl+B | naglasi (ili vrati u običnu) označenu reč ili reč pod kursorom, u polju prevoda i na slici |
 | Esc | zatvori meni → izlaz iz polja za tekst → režim Izbor i poništen izbor → nazad na projekat |
 | Shift / Ctrl + klik | izbor više blokova |
@@ -490,7 +495,8 @@ Studio-u) natpis može da se uradi u AI aplikaciji koju već plaćaš (Gemini), 
    ponovo **Ctrl+V** i pošalji;
 4. na slici koju Gemini vrati: desni klik → **Copy image**; u editoru, dok je blok i dalje izabran, **Ctrl+V**.
    Slika postaje zakrpa na mestu isečka: bez izobličenja, **iznad teksta**, a na crno-beloj strani siva, sa papirom
-   i mastilom u tonovima stranice (bez bež ili sive podloge). Kao kod AI prepravke, prenosi se samo okvir bloka i
+   i mastilom u tonovima stranice (bez bež ili sive podloge); na strani u boji boje se usklade sa originalom (AI
+   vraća isprane boje, npr. svetliju pozadinu, pa bi se zakrpa videla kao svetliji pravougaonik). Kao kod AI prepravke, prenosi se samo okvir bloka i
    nova slova koja iz njega izlaze: linije, kosa i slično što je AI dodao dalje od natpisa ne prelaze na stranicu.
    Ono što AI doda **unutar** okvira bloka ostaje, pa to obriši četkicom „obriši zakrpu" (pomaže i tesan okvir bloka).
    Ivice doteraj četkicom „obriši zakrpu", ako je AI dirao crtež oko natpisa.
@@ -564,6 +570,10 @@ spisak poslova koji čekaju, redom kojim dolaze na red. Posle minut rada pojavlj
 tekućem poslu i otprilike do kraja reda (poslovi iste vrste se računaju kao jednako dugi). Vidi se svaki posao iz
 reda — uvoz, obrada i OCR, prevod, čišćenje, priprema albuma, predlozi glosara, pakovanje izvoza — ali ne i čitanje
 jednog bloka (R) ni crtanje strana pri izvozu, jer oni ne idu kroz red.
+
+„Prekini" na poslu koji još čeka u redu odmah ga uklanja: otkazan uvoz briše otpremljene fajlove, a otkazan izvoz
+dobija status „neuspeo" i može da se obriše ili pokrene ponovo.
+Izvoz prekinut dok se strane još crtaju (dugme „Prekini" na strani za izvoz) ne ostavlja zapis u spisku izvoza.
 
 ### 2.8 Saveti
 

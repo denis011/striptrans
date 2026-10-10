@@ -116,3 +116,10 @@ def test_punctuation_alone_is_not_marked():
     page = lettering([("PENSI DI ESSERE", False), ("AL CIRCO", False), ("?! ?", True)])
 
     assert analyze(page, "PENSI DI ESSERE\nAL CIRCO\n?! ?").words == []
+
+
+def test_flatten_keeps_a_partly_emphasized_hyphenated_word_whole():
+    # kratak deo reda („RA") nema naglasak, pa je naglašen samo jedan deo reči
+    assert flatten("*BROWN E' ANCO-*\nRA VIVO?", emphasis=True) == "*BROWN E' ANCORA* VIVO?"
+    assert flatten("E' ANCO-\n*RA* VIVO?", emphasis=True) == "E' *ANCORA* VIVO?"
+    assert flatten("*ANCO-*\nRA!") == "ANCORA!"

@@ -139,6 +139,7 @@ def translate_page(
             result.from_memory += 1
         else:
             remaining.append(group)
+    session.commit()  # model radi bez zaključane baze: inače izmene iz editora čekaju i padaju
     if remaining:
         glossary = glossary_pairs(session, series_id)
         sources = [_chain_source(n, group) for n, group in enumerate(remaining, start=1)]
@@ -198,6 +199,7 @@ def translate_block(
     page = block.page
     group = chains.chain_of(block, _blocks(session, page.id)) if block.text.strip() else [block]
     if block.kind == "sfx" and len(group) == 1:
+        history.record(session, page, "prevod bloka")
         sfx_glossary.apply(block, sfx_glossary.load(session))
         session.commit()
         return block
@@ -205,6 +207,7 @@ def translate_block(
     text, note = _block_translation(session, block, group, model, shorter, style)
     if not text:
         raise TranslationFailed("model nije vratio prevod")
+    history.record(session, page, "prevod bloka")  # tek posle modela, da baza ne čeka zaključana
     if len(group) > 1 and not shorter:
         # deo lanca: prevodi se ceo tekst, a menjaju se ovaj blok i delovi bez ručnih izmena
         _apply_chain(group, text, model, {"none", "draft"}, force=block, note=note)

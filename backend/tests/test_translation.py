@@ -179,3 +179,26 @@ def test_emphasis_markers_are_sent_and_kept_when_carried_over(monkeypatch):
     assert result == {1: "*STANI!*... PUSTI", 2: "DOSTA!"}
     assert "1. [speech] *FERMO!*... LASCIA" in requests[0]["prompt"]
     assert "asterisks" in requests[0]["prompt"]
+
+
+def test_truncated_answer_is_asked_again_with_a_bigger_limit(monkeypatch):
+    import httpx
+
+    from app.services import llm
+    from app.services.openrouter import OpenRouterClient
+
+    full = json.dumps({"translations": [{"number": n, "text": "X"} for n in (1, 2, 3)]})
+    replies = iter([(full[:40], "length"), (full, "stop")])
+    limits = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        limits.append(json.loads(request.content)["max_tokens"])
+        content, reason = next(replies)
+        choice = {"message": {"content": content}, "finish_reason": reason}
+        return httpx.Response(200, json={"choices": [choice]})
+
+    client = OpenRouterClient("https://or", "tajna", transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(llm, "remote_client", lambda settings=None: client)
+
+    assert translate_blocks(MODEL, BLOCKS, [], [], []) == {1: "X", 2: "X", 3: "X"}
+    assert limits == [2048, 8192]  # dva poziva umesto ponovnog prevoda svakog bloka posebno

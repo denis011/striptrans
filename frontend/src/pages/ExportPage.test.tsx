@@ -91,6 +91,19 @@ describe("ExportPage", () => {
     expect(calls(fetchMock, "POST", "/api/exports/5/finish")).toHaveLength(1);
   });
 
+  it("izvoz koji pukne pri crtanju se briše, a greška se prikazuje", async () => {
+    const fetchMock = renderExport({
+      "POST /api/projects/1/exports": created,
+      "DELETE /api/exports/5": null,
+    }); // blokovi stranice nedostaju: crtanje pada
+
+    await userEvent.click(await screen.findByRole("button", { name: "Izvezi album" }));
+
+    expect(await screen.findByText(/nema mock-a/)).toBeInTheDocument();
+    expect(calls(fetchMock, "DELETE", "/api/exports/5")).toHaveLength(1);
+    expect(calls(fetchMock, "POST", "/api/exports/5/finish")).toHaveLength(0);
+  });
+
   it("nudi preuzimanje gotovih izvoza", async () => {
     renderExport({ "GET /api/projects/1/exports": [{ ...created, status: "done", size: 5 * 1024 * 1024 }] });
 

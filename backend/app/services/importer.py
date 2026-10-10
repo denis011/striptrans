@@ -85,12 +85,28 @@ def detect_format(path: Path) -> str:
         raise ImportFailed("nepodržan format fajla") from None
 
 
+def _read_entry(entry) -> bytes:
+    """Stavka arhive deo po deo: raspakovana „bomba" staje na granici, ne puni memoriju."""
+    blocks, size = [], 0
+    for block in entry.get_blocks():
+        size += len(block)
+        if size > MAX_TOTAL_BYTES:
+            raise ImportFailed(f"stavka {entry.pathname} je prevelika (raspakovana)")
+        blocks.append(block)
+    return b"".join(blocks)
+
+
+def _check_pixels(width: float, height: float) -> None:
+    if width * height > MAX_IMAGE_PIXELS:
+        raise ImportFailed(f"strana PDF-a je prevelika ({round(width)}×{round(height)})")
+
+
 def _iter_archive(path: Path) -> Iterator[tuple[str, bytes]]:
     try:
         with libarchive.file_reader(str(path)) as archive:
             for entry in archive:
                 if entry.isfile and not is_ignored(entry.pathname):
-                    yield entry.pathname, b"".join(entry.get_blocks())
+                    yield entry.pathname, _read_entry(entry)
     except libarchive.ArchiveError as exc:
         raise ImportFailed(f"arhiva je oštećena ili nepodržana ({exc})") from exc
 
@@ -110,6 +126,7 @@ def _scan_image(page: pdfium.PdfPage) -> tuple[str, bytes] | None:
         return None
     if image.get_filters() == ["DCTDecode"]:
         return "jpeg", bytes(image.get_data(decode_simple=False))
+    _check_pixels(*image.get_px_size())  # pre dekodiranja ugrađene slike
     buffer = io.BytesIO()
     image.get_bitmap(render=False).to_pil().save(buffer, "PNG")
     return "png", buffer.getvalue()
@@ -128,6 +145,8 @@ def _iter_pdf(path: Path) -> Iterator[tuple[str, bytes]]:
             if scan:
                 yield f"{name}.{scan[0]}", scan[1]
                 continue
+            width, height = page.get_size()
+            _check_pixels(width * PDF_DPI / 72, height * PDF_DPI / 72)  # pre crtanja strane
             buffer = io.BytesIO()
             page.render(scale=PDF_DPI / 72).to_pil().save(buffer, "PNG")
             yield f"{name}.png", buffer.getvalue()

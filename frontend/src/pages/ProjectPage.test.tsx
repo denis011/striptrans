@@ -40,6 +40,23 @@ describe("ProjectPage", () => {
     expect(steps[3]).not.toHaveClass("done");
   });
 
+  it("korak 4: neodobreni prevodi vode na svoj blok u editoru, sa spiskom stranica", async () => {
+    const pending = [
+      { page: 2, block: 201, status: "edited" as const },
+      { page: 3, block: 301, status: "edited" as const },
+      { page: 3, block: 302, status: "edited" as const },
+    ];
+    const translation = { edited: 3, approved: 7 };
+    renderProject({ ...project, progress: { ...project.progress, translation, pending } });
+    await screen.findByRole("heading", { name: "Ramon 12 — Pasakr" });
+
+    const step = within(screen.getByRole("list", { name: "Koraci obrade" })).getAllByRole("listitem")[3];
+
+    expect(step).toHaveTextContent("3 izmenjeno (str. 2, 3) · 7 odobreno");
+    expect(within(step).getByRole("link", { name: "3 izmenjeno" })).toHaveAttribute("href", "/projects/1/pages/2?block=201");
+    expect(within(step).getByRole("link", { name: "3" })).toHaveAttribute("href", "/projects/1/pages/3?block=301");
+  });
+
   it("korak 8 pokazuje izvoz u toku: crtanje, pa upozorenje kad je tab zatvoren", async () => {
     const drawing = { stage: "drawing" as const, done: 34, total: 98, stale: true };
     renderProject({ ...project, progress: { ...project.progress, export_active: drawing } });

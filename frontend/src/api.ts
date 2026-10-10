@@ -270,6 +270,8 @@ export interface ProjectProgress {
   unread: number;
   blocks: number;
   translation: Partial<Record<TranslationStatus, number>>;
+  /** neodobreni blokovi redom: pozicija stranice, id bloka i status */
+  pending?: { page: number; block: number; status: TranslationStatus }[];
   proofread: number;
   cleaned: number;
   exported_at: string | null;
@@ -395,6 +397,10 @@ export interface OcrModels {
 }
 
 export const listOcrModels = () => request<OcrModels>("/api/ocr/models");
+
+/** Izabrani model ako ga server još nudi, inače podrazumevani ili prvi sa spiska. */
+export const pickModel = (chosen: string | null | undefined, data: OcrModels | undefined) =>
+  [chosen, data?.default_model, data?.models[0]?.name].find((name): name is string => !!name && !!data?.models.some((model) => model.name === name));
 export const ocrBlock = (id: number, model?: string) =>
   request<TextBlock>(`/api/blocks/${id}/ocr`, json("POST", { model }));
 

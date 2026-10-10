@@ -2,7 +2,6 @@
 
 import io
 import re
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,8 +33,6 @@ MAX_LOWERCASE_SHARE = 0.3
 @dataclass
 class OcrResult:
     text: str
-    model: str
-    seconds: float
     needs_review: bool
 
 
@@ -168,7 +165,6 @@ def read_block(
     language: str = "it",
 ) -> OcrResult:
     crop = crop_block(image_path, block.x, block.y, block.width, block.height)
-    started = time.monotonic()
     tokens = max_tokens_for(block.kind, max_tokens)
     result = client.generate(prompt_for(language), model, tokens, images=[crop], temperature=0)
     if result.truncated and block.kind != "sfx":
@@ -178,7 +174,5 @@ def read_block(
     text, looped = postprocess(result.response, block.kind)
     return OcrResult(
         text=text,
-        model=model,
-        seconds=round(time.monotonic() - started, 2),
         needs_review=looped or needs_review(text),
     )

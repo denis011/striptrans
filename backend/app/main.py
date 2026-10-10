@@ -38,7 +38,9 @@ def create_app(
         run_migrations(settings.database_url)
         engine = make_engine(settings.database_url)
         app.state.settings = settings
-        app.state.session_factory = sessionmaker(engine)
+        # data_dir u sesiji: istorija sama briše svoje isečke slika
+        info = {"data_dir": Path(settings.data_dir)}
+        app.state.session_factory = sessionmaker(engine, info=info)
         app.state.llama = ocr_client(settings, llama_transport)
         yield
         app.state.llama.close()
