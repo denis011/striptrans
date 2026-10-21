@@ -1,6 +1,6 @@
 // Izvoz albuma iz browsera: svaka stranica se crta istim kodom kao u editoru i šalje backendu.
 
-import { type Export, type FontInfo, type Page, type Series, type TextBlock, listBlocks, listPatches, pageCleanUrl, pageImageUrl, uploadExportPage } from "../api";
+import { type Export, type FontInfo, type Page, type Series, type TextBlock, coveredBlocks, listBlocks, listPatches, pageCleanUrl, pageImageUrl, uploadExportPage } from "../api";
 import { letterBlocks } from "../lettering/blocks";
 import { loadFontMetrics, pageFonts } from "../lettering/fonts";
 import { renderPage } from "./renderPage";
@@ -33,12 +33,13 @@ export async function runExport({ exportJob, pages, series, fonts, onProgress, c
     if (!page) throw new Error(`stranica ${item.position} ne postoji`);
     const blocks: TextBlock[] = await listBlocks(page.id);
     const metrics = await loadFontMetrics(pageFonts(fonts, series, blocks).used);
-    const lettering = letterBlocks(blocks, page.height, {
-      dialogue: metrics[dialogue.key],
-      sound: metrics[sound.key],
-      byKey: (key) => metrics[key],
-      captionItalic: !!series.caption_italic,
-    });
+    const patches = await listPatches(page.id);
+    const lettering = letterBlocks(
+      blocks,
+      page.height,
+      { dialogue: metrics[dialogue.key], sound: metrics[sound.key], byKey: (key) => metrics[key], captionItalic: !!series.caption_italic },
+      coveredBlocks(patches),
+    );
     if (lettering.some((entry) => !entry.layout.fits)) progress.overflow.push(page.position);
     const image = await renderPage({
       imageUrl: page.cleaned_at ? pageCleanUrl(page) : pageImageUrl(page.id, page.version),
@@ -46,7 +47,7 @@ export async function runExport({ exportJob, pages, series, fonts, onProgress, c
       height: page.height,
       lettering,
       // zakrpe (ručne i AI prepravke) su deo stranice, isto kao u editoru i „Sačuvaj stranicu"
-      patches: await listPatches(page.id),
+      patches,
       format: "png", // bez gubitaka; backend kodira jednom u izabrani format
     });
     await uploadExportPage(exportJob.id, item.position, image);

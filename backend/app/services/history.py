@@ -53,6 +53,7 @@ PATCH_FIELDS = (
     "opacity",
     "above_text",
     "mask_path",
+    "block_id",
 )
 
 

@@ -36,6 +36,7 @@ interface Props {
   brush?: { mode: MaskStroke["mode"]; radius: number } | null; // četkica za masku čišćenja
   onBrushStroke?: (stroke: MaskStroke) => void;
   patches?: Patch[]; // zakrpe slikom (Faza 6c)
+  covered?: ReadonlySet<number | null>; // blokovi pod svojom zakrpom: okvir samo kad su izabrani
   editPatches?: boolean; // zakrpa se bira, pomera, uvećava i rotira mišem
   selectedPatchId?: number | null;
   onSelectPatch?: (id: number | null) => void;
@@ -82,6 +83,7 @@ export default function PageCanvas({
   brush = null,
   onBrushStroke,
   patches = NO_PATCHES,
+  covered,
   editPatches = false,
   selectedPatchId = null,
   onSelectPatch,
@@ -336,6 +338,7 @@ export default function PageCanvas({
           <Layer>
             {(editLettering ? NO_BLOCKS : blocks).map((block) => {
               const selected = selectedIds.includes(block.id);
+              if (covered?.has(block.id) && !selected) return null;
               const color = kindColor(block.kind);
               return (
                 <Fragment key={block.id}>

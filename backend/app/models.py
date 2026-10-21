@@ -204,6 +204,10 @@ class Patch(Base):
     # vidljivost piksela zakrpe (PNG „L" u veličini slike, 0 = obrisano četkicom);
     # None = cela vidljiva. Svaka izmena je nov fajl, pa „Poništi" samo vraća putanju.
     mask_path: Mapped[str | None] = mapped_column(String(500))
+    # blok koji zakrpa pokriva (slika iz AI aplikacije ili AI prepravka): ne slaže se i nema okvir
+    block_id: Mapped[int | None] = mapped_column(
+        ForeignKey("text_blocks.id", ondelete="SET NULL", name="fk_patches_block_id")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 

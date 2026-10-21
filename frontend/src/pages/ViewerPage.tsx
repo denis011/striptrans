@@ -10,6 +10,7 @@ import {
   type Rect,
   type TextBlock,
   addDictionaryWord,
+  coveredBlocks,
   pickModel,
   createSfx,
   listStyles,
@@ -66,7 +67,7 @@ import { pageFonts, useFontMetrics } from "../lettering/fonts";
 import { type ImageFormat, downloadBlob, pageFilename, renderPage } from "../export/renderPage";
 import JobStatus, { isActiveJob } from "../components/JobStatus";
 import PageCanvas, { type Fit } from "../components/PageCanvas";
-import PatchTools from "../components/PatchTools";
+import PatchTools, { copyAiPrompt, copyForAi } from "../components/PatchTools";
 import { moveBlock, toggleSelection } from "../editor/blocks";
 import { importRanks } from "../pageOrder";
 import { loadSetting, saveSetting } from "../storage";
@@ -187,6 +188,7 @@ export default function ViewerPage() {
   const fontList = fontsQuery.data ?? [];
   const series = project.data?.series;
   const { dialogue: dialogueFont, sound: soundFont, used: usedFonts } = pageFonts(fontList, series, blocks);
+  const covered = coveredBlocks(patches);
   const fontMetrics = useFontMetrics(usedFonts);
   const pageLettering =
     page && dialogueFont && soundFont && fontMetrics?.[dialogueFont.key] && fontMetrics[soundFont.key]
@@ -195,7 +197,7 @@ export default function ViewerPage() {
           sound: fontMetrics[soundFont.key],
           byKey: (key) => fontMetrics[key],
           captionItalic: !!series?.caption_italic,
-        })
+        }, covered)
       : undefined;
   const lettering = showLettering ? pageLettering : undefined;
   // blokovi čiji tekst ne staje: panel kaže koji red je preširok i koliko
@@ -319,6 +321,11 @@ export default function ViewerPage() {
     onSuccess: (patch, _file, id) => {
       queryClient.setQueryData<Patch[]>(["patches", id], (old) => [...(old ?? []), patch]);
       refreshHistory(id);
+      if (patch.block_id !== null) {
+        // blok pod zakrpom je odobren: lista blokova i spisak neodobrenih se menjaju
+        queryClient.invalidateQueries({ queryKey: ["blocks", id] });
+        queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      }
       setMode("patch");
       setSelectedPatchId(patch.id);
     },
@@ -513,6 +520,39 @@ export default function ViewerPage() {
     } else navigate(`/projects/${projectId}/pages/${next.page}?block=${next.block}`);
   };
 
+  // „sledeći za AI" (G): naslov, natpis ili zvuk bez svoje zakrpe, kroz ceo album; isečak ide u
+  // clipboard odmah, dok taster još daje dozvolu za upis
+  const [aiImageOf, setAiImageOf] = useState<number | null>(null); // blok čiji je isečak upravo kopiran
+  const nextForAi = () => {
+    // izabran blok bez zakrpe je sledeći; zakrpa nalepljena maločas važi i pre nego što se spisak osveži
+    const list = project.data?.progress.ai_pending ?? [];
+    const open = (item: (typeof list)[number]) => !covered.has(item.block);
+    const at = list.findIndex((item) => item.block === selectedIds[0]);
+    const next =
+      at >= 0 && open(list[at])
+        ? list[at]
+        : ((at >= 0 ? list.slice(at + 1).find(open) : list.find((item) => item.page >= position && open(item))) ?? list.find(open));
+    const target = next && originals.find((item) => item.id === next.page_id);
+    if (!next || !target) {
+      setNote("Nema više naslova, natpisa ni zvukova bez zakrpe");
+      return;
+    }
+    if (aiImageOf === next.block && next.translated) {
+      // drugi G na istom bloku: uputstvo (Gemini iz jednog lepljenja uzima samo sliku); treći opet isečak
+      setAiImageOf(null);
+      void copyAiPrompt(next.block, setNote);
+      return;
+    }
+    const [x, y, width, height] = next.box;
+    const shown = blocks.find((block) => block.id === next.block)?.position ?? next.block; // samo za ime fajla
+    setAiImageOf(next.block);
+    void copyForAi(next.page_id, { position: shown }, cropRect({ x, y, width, height }, target), setNote);
+    if (next.page === position) {
+      setMode("patch");
+      setSelectedIds([next.block]);
+    } else navigate(`/projects/${projectId}/pages/${next.page}?block=${next.block}`);
+  };
+
   // strelice pomeraju izabranu zakrpu ili blokove: odmah na ekranu, a na server (i u istoriju)
   // jednom, kad se strelice puste na trenutak ili kad se pređe na drugu stranicu
   const [nudges, setNudges] = useState(0); // broj pritisaka: svaki odlaže čuvanje
@@ -594,6 +634,7 @@ export default function ViewerPage() {
     read: () => {
       if (selectedIds.length > 0) readBlocks(selectedIds);
     },
+    nextForAi,
     nudge,
     turnPage: (key) => {
       const next = positionForKey(key, position, count);
@@ -969,6 +1010,7 @@ export default function ViewerPage() {
             onChangeBlock={changeBlock}
             onCreateBlock={(rect) => create.mutate(rect)}
             patches={patches}
+            covered={covered}
             editPatches={editPatches}
             selectedPatchId={selectedPatchId}
             onSelectPatch={setSelectedPatchId}
@@ -986,6 +1028,7 @@ export default function ViewerPage() {
           <h2>Blokovi ({blocks.length})</h2>
           <BlockPanel
             blocks={onlyWarnings ? blocks.filter((block) => warned.has(block.id)) : blocks}
+            covered={covered}
             selectedIds={selectedIds}
             onSelect={select}
             onUpdate={changeBlock}

@@ -12,6 +12,7 @@ export interface ShortcutActions {
   toggleMode: (mode: ShortcutMode) => void;
   pending: () => void; // U: sledeći neodobren blok
   read: () => void; // R: OCR izabranih blokova
+  nextForAi: () => void; // G: sledeći naslov, natpis ili zvuk bez zakrpe, isečak u clipboard
   nudge: (dx: number, dy: number) => boolean; // strelice: true ako je nešto pomereno
   turnPage: (key: string) => boolean; // strelice, Home, End… bez izbora: druga stranica
 }
@@ -52,6 +53,8 @@ export function useShortcuts(actions: ShortcutActions) {
       actions.pending();
     } else if (plain && key === "r") {
       actions.read();
+    } else if (plain && key === "g") {
+      actions.nextForAi();
     } else {
       const delta = command || event.altKey ? null : nudgeForKey(event.key, event.shiftKey);
       if ((delta && actions.nudge(delta[0], delta[1])) || actions.turnPage(event.key)) event.preventDefault();

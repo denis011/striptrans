@@ -243,5 +243,6 @@ def accept(session: Session, data_dir: Path, page: Page, block: TextBlock, resul
     box = {"x": x0 + px, "y": y0 + py, "width": pw, "height": ph}
     patch = patches.add(session, data_dir, page, buffer.getvalue(), box)
     patch.above_text = True
+    patches.cover(patch, block)
     session.flush()
     return patch

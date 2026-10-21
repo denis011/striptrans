@@ -82,7 +82,7 @@ def test_proposal_is_fitted_to_the_crop_and_accepted_as_a_patch_over_the_block(c
     assert patch["x"] <= 100 and patch["y"] <= 100
     assert patch["x"] + patch["width"] >= 300 and patch["y"] + patch["height"] >= 180
     assert patch["x"] >= x and patch["x"] + patch["width"] <= x + width
-    assert patch["above_text"] is True
+    assert patch["above_text"] is True and patch["block_id"] == block["id"]
     assert client.post(f"/api/pages/{page['id']}/undo").json()["action"] == "AI prepravka"
     assert client.get(f"/api/pages/{page['id']}/patches").json() == []
     # isti (plaćen) predlog se prihvata ponovo bez novog poziva modela

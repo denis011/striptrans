@@ -23,6 +23,7 @@ import GlyphEditor, { type SavedGlyph } from "./GlyphEditor";
 
 interface Props {
   blocks: TextBlock[];
+  covered?: ReadonlySet<number | null>; // blokovi čiji tekst zamenjuje zakrpa
   selectedIds: number[];
   onSelect: (id: number, additive: boolean) => void;
   onUpdate: (id: number, changes: BlockChanges) => void;
@@ -626,6 +627,7 @@ function BlockText({ block, onSave }: { block: TextBlock; onSave: (text: string)
 
 export default function BlockPanel({
   blocks,
+  covered,
   selectedIds,
   onSelect,
   onUpdate,
@@ -703,6 +705,11 @@ export default function BlockPanel({
                   </option>
                 ))}
               </select>
+              {covered?.has(block.id) && (
+                <span className="badge" title="Tekst zamenjuje zakrpa (slika iz AI aplikacije): ne slaže se i nema okvir">
+                  zakrpa
+                </span>
+              )}
               {blocks
                 .filter((other) => other.continues_id === block.id)
                 .map((other) => (

@@ -271,7 +271,7 @@ ostavlja otvorenim.
   blokova (boja označava tip), „Očišćeno" stranicu bez originalnog teksta, a „Prevod na slici" složen prevod.
 
 **Blokovi (OCR):**
-- tipovi su Govor, Misao, Naracija, Onomatopeja, Ostalo (natpisi, table) i Naslov (naslov priče). Tip određuje
+- tipovi su Govor, Naracija, Onomatopeja, Natpis (natpisi i table na crtežu) i Naslov (naslov priče). Tip određuje
   čišćenje i slaganje, pa ga vredi ispraviti;
 - režim **Blok** (N): prevuci pravougaonik preko teksta. Ako je uključeno „Čitaj nov blok" (meni OCR), tekst se
   odmah pročita;
@@ -340,8 +340,8 @@ ostavlja otvorenim.
 - **Očisti blok** (dugme sa gumicom u zaglavlju bloka) čisti original samo ispod tog bloka; ostatak stranice i ranije
   ispravke četkicom ostaju, a „Poništi" ga vraća. Zgodno kad treba ponovo očistiti jedan oblačić (npr. posle
   pomeranja okvira) bez čišćenja cele stranice;
-- **Očisti** briše originalni tekst. Govor, misao i naracija se prekrivaju bojom oblačića. Onomatopeje i
-  natpisi (Ostalo) se brišu preko crteža samo ako imaju prevod različit od originala;
+- **Očisti** briše originalni tekst. Govor i naracija se prekrivaju bojom oblačića. Onomatopeje i
+  natpisi se brišu preko crteža samo ako imaju prevod različit od originala;
 - režim **Četkica** (B) ispravlja masku čišćenja. Prevlači se preko mesta, uz izbor režima i veličine:
   - *obriši tekst (belo)*: ostatak slova se prekriva bojom okoline;
   - *obriši preko crteža*: LaMa dopunjuje crtež;
@@ -455,6 +455,7 @@ ostavlja otvorenim.
 | Ctrl+Enter | snimi tekst (u polju na slici) ili odobri prevod bloka i pređi na sledeći |
 | Ctrl+Shift+Enter | odobri celu stranicu i pređi na sledeću |
 | U | sledeći neodobren blok (i na drugim stranicama) |
+| G | izabran (ili sledeći) naslov, natpis ili onomatopeja bez zakrpe: isečak u clipboard za Gemini; drugi G na istom bloku kopira uputstvo, treći opet isečak |
 | Ctrl+B | naglasi (ili vrati u običnu) označenu reč ili reč pod kursorom, u polju prevoda i na slici |
 | Esc | zatvori meni → izlaz iz polja za tekst → režim Izbor i poništen izbor → nazad na projekat |
 | Shift / Ctrl + klik | izbor više blokova |
@@ -486,12 +487,15 @@ Otvara se dugmetom „Glosar" na strani projekta.
 
 Umesto AI prepravke preko API-ja (0,03–0,07 $ po natpisu; besplatne kvote za modele za slike nema ni na Google AI
 Studio-u) natpis može da se uradi u AI aplikaciji koju već plaćaš (Gemini), bez čuvanja fajlova:
-1. izaberi blok natpisa (naslov, natpis ili onomatopeju sa prevodom) i uključi režim **Zakrpe (P)**;
+1. pritisni **G** („sledeći za AI"): ako je izabran naslov, natpis ili onomatopeja bez svoje zakrpe, kopira baš taj
+   blok; inače bira sledeći takav blok od trenutne stranice nadalje (i na drugim stranicama). Uključi režim Zakrpe i
+   odmah kopira isečak — to je korak 2 bez klika. Ručno: izaberi blok i
+   režim **Zakrpe (P)**;
 2. **„Pripremi za AI"** kopira isečak originala (sa italijanskim natpisom, blok + 10 px) u clipboard; prvi put u
    sesiji otvori i Gemini u novom tabu, a posle toga pređi na taj tab sam (**Ctrl+Tab**, nazad **Ctrl+Shift+Tab**).
    Aplikacija ne može da prebaci na već otvoren Gemini tab (Gemini to zabranjuje), pa ga ne otvara ponovo; ako si ga
    zatvorio, dugme sa strelicom pored otvara nov. Najbrže: Gemini u posebnom prozoru pored editora. Tamo **Ctrl+V**;
-3. **„Uputstvo za AI"** kopira uputstvo (stari natpis, prevod slovo po slovo, isti stil i položaj); u Gemini-ju
+3. **drugi G** na istom bloku (ili **„Uputstvo za AI"**) kopira uputstvo (stari natpis, prevod slovo po slovo, isti stil i položaj); u Gemini-ju
    ponovo **Ctrl+V** i pošalji;
 4. na slici koju Gemini vrati: desni klik → **Copy image**; u editoru, dok je blok i dalje izabran, **Ctrl+V**.
    Slika postaje zakrpa na mestu isečka: bez izobličenja, **iznad teksta**, a na crno-beloj strani siva, sa papirom
@@ -500,6 +504,9 @@ Studio-u) natpis može da se uradi u AI aplikaciji koju već plaćaš (Gemini), 
    nova slova koja iz njega izlaze: linije, kosa i slično što je AI dodao dalje od natpisa ne prelaze na stranicu.
    Ono što AI doda **unutar** okvira bloka ostaje, pa to obriši četkicom „obriši zakrpu" (pomaže i tesan okvir bloka).
    Ivice doteraj četkicom „obriši zakrpu", ako je AI dirao crtež oko natpisa.
+5. blok **ne briši**: nalepljena slika zamenjuje njegov tekst. Blok dobija oznaku **zakrpa** i status odobreno, ne
+   slaže se i nema okvir (okvir se vidi samo kad ga izabereš u panelu). Kad obrišeš zakrpu ili je poništiš, blok se
+   vraća. Dalje: ponovo **G**.
 
 Ctrl+V slike radi uvek kad kursor nije u polju za tekst; bez izabranog bloka zakrpa ide na sredinu stranice (kao
 „Dodaj zakrpu…"). Ako pregledač ne dozvoli sliku u clipboard-u, „Pripremi za AI" isečak preuzme kao fajl.
@@ -579,7 +586,7 @@ Izvoz prekinut dok se strane još crtaju (dugme „Prekini" na strani za izvoz) 
 
 - Pre pripreme albuma obeleži naslovnu, reklame i uvodnik kao preskočene. Tako se ne troši OCR i prevod.
 - Onomatopeje koje detektor promaši nacrtaj ručno (N) i izaberi tip Onomatopeja.
-- Natpise na tablama postavi na tip Ostalo, a naslov priče na tip Naslov. Ako su na tamnoj traci, ponovo očisti
+- Natpise na tablama postavi na tip Natpis, a naslov priče na tip Naslov. Ako su na tamnoj traci, ponovo očisti
   stranicu.
 - Za teksturisane table (npr. SALOON) posle čišćenja upotrebi četkicu „obriši preko crteža".
 - Ako tekst „ne staje" iako oblačić izgleda dovoljno veliki, oblik oblačića je verovatno promašeno izmeren.

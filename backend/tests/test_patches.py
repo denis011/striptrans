@@ -258,3 +258,78 @@ def test_deleting_a_page_keeps_patch_files_that_undo_still_needs(client):
     client.post(f"/api/pages/{page['id']}/undo")
 
     assert client.get(patch["url"]).status_code == 200
+
+
+def test_ai_app_image_covers_its_block_until_undo(client):
+    page = create_page(client)
+    block = client.post(
+        f"/api/pages/{page['id']}/blocks",
+        json={"x": 100, "y": 100, "width": 200, "height": 80, "text": "SWISH", "kind": "sfx"},
+    ).json()
+    project = client.get("/api/projects").json()[0]["id"]
+    pending = lambda: client.get(f"/api/projects/{project}").json()["progress"]["pending"]  # noqa: E731
+    assert [item["block"] for item in pending()] == [block["id"]]
+
+    patch = client.post(
+        f"/api/pages/{page['id']}/patches",
+        data={"block_id": str(block["id"])},
+        files=[("file", ("gemini.png", png_bytes((220, 100)), "image/png"))],
+    ).json()
+
+    assert patch["block_id"] == block["id"]  # blok se ne slaže i nema okvir
+    assert (
+        client.get(f"/api/pages/{page['id']}/blocks").json()[0]["translation_status"] == "approved"
+    )
+    assert pending() == []  # ne čeka odobrenje
+    client.post(f"/api/pages/{page['id']}/undo")
+    assert client.get(f"/api/pages/{page['id']}/patches").json() == []
+    assert (
+        client.get(f"/api/pages/{page['id']}/blocks").json()[0]["translation_status"] != "approved"
+    )
+
+
+def test_deleting_the_block_keeps_its_patch(client):
+    page = create_page(client)
+    block = client.post(
+        f"/api/pages/{page['id']}/blocks",
+        json={"x": 100, "y": 100, "width": 200, "height": 80, "text": "SWISH", "kind": "sfx"},
+    ).json()
+    client.post(
+        f"/api/pages/{page['id']}/patches",
+        data={"block_id": str(block["id"])},
+        files=[("file", ("gemini.png", png_bytes((220, 100)), "image/png"))],
+    )
+
+    client.delete(f"/api/blocks/{block['id']}")
+
+    [patch] = client.get(f"/api/pages/{page['id']}/patches").json()
+    assert patch["block_id"] is None
+
+
+def test_progress_lists_titles_signs_and_sounds_without_their_patch(client):
+    page = create_page(client)
+    body = {"x": 100, "y": 100, "width": 200, "height": 80}
+    sound = client.post(
+        f"/api/pages/{page['id']}/blocks", json={**body, "text": "BANG", "kind": "sfx"}
+    ).json()
+    sign = client.post(
+        f"/api/pages/{page['id']}/blocks",
+        json={**body, "y": 300, "text": "SALOON", "kind": "other"},
+    ).json()
+    client.post(
+        f"/api/pages/{page['id']}/blocks", json={**body, "y": 500, "text": "CIAO"}
+    )  # govor: ne
+    project = client.get("/api/projects").json()[0]["id"]
+    ai_pending = lambda: client.get(f"/api/projects/{project}").json()["progress"]["ai_pending"]  # noqa: E731
+    assert [(item["block"], item["box"]) for item in ai_pending()] == [
+        (sound["id"], [100, 100, 200, 80]),
+        (sign["id"], [100, 300, 200, 80]),
+    ]
+
+    client.post(
+        f"/api/pages/{page['id']}/patches",
+        data={"block_id": str(sound["id"])},
+        files=[("file", ("gemini.png", png_bytes((220, 100)), "image/png"))],
+    )
+
+    assert [item["block"] for item in ai_pending()] == [sign["id"]]

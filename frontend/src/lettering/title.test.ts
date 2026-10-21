@@ -145,6 +145,11 @@ const blockFor = (changes: Partial<TextBlock> = {}): TextBlock => ({
 describe("naslov na stranici", () => {
   const block = blockFor;
 
+  it("naslov pod svojom zakrpom (slika iz AI aplikacije) se ne slaže", () => {
+    expect(letterBlocks([block({})], 2457, fonts, new Set([7]))).toEqual([]);
+    expect(letterBlocks([block({})], 2457, fonts, new Set([8]))).toHaveLength(1);
+  });
+
   it("slaže se slikama slova, sa verzijom u adresi", () => {
     const [lettering] = letterBlocks([block({})], 2457, fonts);
 

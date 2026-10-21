@@ -271,6 +271,71 @@ describe("ViewerPage", () => {
     );
   });
 
+  it("blok pod svojom zakrpom ima oznaku „zakrpa\"", async () => {
+    const patch = { id: 7, position: 1, x: 10, y: 20, width: 100, height: 50, rotation: 0, opacity: 1, above_text: true, block_id: 101, url: "/api/patches/7/image" };
+    renderEditor(1, { "GET /api/pages/11/patches": [patch] });
+
+    const item = await screen.findByTestId("block-101");
+    expect(await within(item).findByText("zakrpa")).toBeInTheDocument();
+    expect(within(screen.getByTestId("block-102")).queryByText("zakrpa")).not.toBeInTheDocument();
+  });
+
+  it("G bira sledeći zvuk ili naslov bez zakrpe, pa prelazi na stranu na kojoj je", async () => {
+    const aiPending = [
+      { page: 1, page_id: 11, block: 102, box: [10, 10, 100, 40], translated: false },
+      { page: 3, page_id: 13, block: 301, box: [20, 20, 80, 30], translated: true },
+    ];
+    renderEditor(1, { "/api/projects/1": { ...project, progress: { ...project.progress, ai_pending: aiPending } } });
+    await screen.findByTestId("block-102");
+
+    await userEvent.keyboard("g");
+    expect(screen.getByTestId("block-102")).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText(/Isečak je preuzet kao fajl/)).toBeInTheDocument(); // jsdom: bez clipboard-a
+
+    await userEvent.keyboard("g"); // izabran blok još nema zakrpu: ostaje on
+    expect(screen.getByTestId("page-indicator")).toHaveTextContent("1 / 3");
+    expect(screen.getByTestId("block-102")).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("drugi G na istom bloku kopira uputstvo, treći opet isečak", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const write = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText, write }, configurable: true });
+    vi.stubGlobal("ClipboardItem", class {
+      constructor(public items: Record<string, unknown>) {}
+    });
+    vi.spyOn(window, "open").mockReturnValue(null);
+    const aiPending = [{ page: 1, page_id: 11, block: 101, box: [10, 10, 100, 40], translated: true }];
+    renderEditor(1, {
+      "/api/projects/1": { ...project, progress: { ...project.progress, ai_pending: aiPending } },
+      "GET /api/blocks/101/ai-prompt": { prompt: "Replace CRASH with KRAŠ" },
+    });
+    await screen.findByTestId("block-101");
+
+    await userEvent.keyboard("g");
+    await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
+    await userEvent.keyboard("g");
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("Replace CRASH with KRAŠ"));
+    await userEvent.keyboard("g");
+    await waitFor(() => expect(write).toHaveBeenCalledTimes(2));
+  });
+
+  it("G posle zakrpe na izabranom bloku ide na sledeći", async () => {
+    const aiPending = [
+      { page: 1, page_id: 11, block: 102, box: [10, 10, 100, 40], translated: false },
+      { page: 3, page_id: 13, block: 301, box: [20, 20, 80, 30], translated: true },
+    ];
+    const patch = { id: 7, position: 1, x: 10, y: 10, width: 100, height: 40, rotation: 0, opacity: 1, above_text: true, block_id: 102, url: "/api/patches/7/image" };
+    renderEditor(1, {
+      "/api/projects/1": { ...project, progress: { ...project.progress, ai_pending: aiPending } },
+      "GET /api/pages/11/patches": [patch], // spisak ai_pending još nije osvežen
+    });
+    await userEvent.click(await screen.findByTestId("block-102"));
+
+    await userEvent.keyboard("g");
+    await waitFor(() => expect(screen.getByTestId("page-indicator")).toHaveTextContent("3 / 3"));
+  });
+
   it("izabranoj zakrpi se menja providnost i može da se obriše", async () => {
     const patch = { id: 7, position: 1, x: 10, y: 20, width: 100, height: 50, rotation: 0, opacity: 1, above_text: false, url: "/api/patches/7/image" };
     const fetchMock = renderEditor(1, {

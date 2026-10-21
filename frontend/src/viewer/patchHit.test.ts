@@ -12,6 +12,7 @@ const patch = (fields: Partial<Patch>): Patch => ({
   rotation: 0,
   opacity: 1,
   above_text: false,
+  block_id: null,
   url: "/api/patches/1/image",
   ...fields,
 });

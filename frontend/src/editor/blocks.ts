@@ -3,10 +3,9 @@ import type { Point, Size } from "../viewer/zoom";
 
 export const BLOCK_KINDS: { kind: BlockKind; label: string; color: string }[] = [
   { kind: "speech", label: "Govor", color: "#2563eb" },
-  { kind: "thought", label: "Misao", color: "#7c3aed" },
   { kind: "caption", label: "Naracija", color: "#059669" },
   { kind: "sfx", label: "Onomatopeja", color: "#dc2626" },
-  { kind: "other", label: "Ostalo", color: "#6b7280" },
+  { kind: "other", label: "Natpis", color: "#6b7280" },
   { kind: "title", label: "Naslov", color: "#d97706" },
 ];
 

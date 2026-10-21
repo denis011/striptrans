@@ -16,7 +16,7 @@ from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Page, Patch
+from app.models import Page, Patch, TextBlock
 from app.services.geometry import GRAY_MODES
 
 MAX_BYTES = 25 * 1024 * 1024
@@ -54,6 +54,12 @@ def _grayscale_like_page(data_dir: Path, page: Page, data: bytes) -> bytes:
     buffer = io.BytesIO()
     gray.save(buffer, "PNG")
     return buffer.getvalue()
+
+
+def cover(patch: Patch, block: TextBlock) -> None:
+    """Zakrpa nacrtana za blok zamenjuje njegov tekst: blok se ne slaže i ne čeka odobrenje."""
+    patch.block_id = block.id
+    block.translation_status = "approved"
 
 
 def add(

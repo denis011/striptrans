@@ -272,6 +272,8 @@ export interface ProjectProgress {
   translation: Partial<Record<TranslationStatus, number>>;
   /** neodobreni blokovi redom: pozicija stranice, id bloka i status */
   pending?: { page: number; block: number; status: TranslationStatus }[];
+  // naslovi, natpisi i zvukovi bez svoje zakrpe, redom: „sledeći za AI" (G)
+  ai_pending?: { page: number; page_id: number; block: number; box: [number, number, number, number]; translated: boolean }[];
   proofread: number;
   cleaned: number;
   exported_at: string | null;
@@ -633,10 +635,14 @@ export interface Patch {
   rotation: number;
   opacity: number;
   above_text: boolean;
+  block_id: number | null; // blok čiji tekst zakrpa zamenjuje (slika iz AI aplikacije)
   url: string;
 }
 
-export type PatchChanges = Partial<Omit<Patch, "id" | "url">>;
+export type PatchChanges = Partial<Omit<Patch, "id" | "url" | "block_id">>;
+
+/** Blokovi čiji tekst zamenjuje zakrpa: ne slažu se i nemaju okvir. */
+export const coveredBlocks = (patches: Patch[]) => new Set(patches.map((patch) => patch.block_id));
 
 export const listPatches = (pageId: number) => request<Patch[]>(`/api/pages/${pageId}/patches`);
 /**

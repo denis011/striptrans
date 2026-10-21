@@ -21,6 +21,43 @@ function openAiApp() {
   }
 }
 
+/**
+ * Ručni AI tok bez fajlova: isečak originala ide u clipboard (Ctrl+V u AI aplikaciji), a slika koju
+ * aplikacija vrati se lepi u editor (Ctrl+V) i postaje zakrpa na bloku. Uputstvo ide posebnim
+ * kopiranjem: Gemini iz jednog lepljenja uzima samo sliku (ili, iz HTML-a, samo tekst).
+ */
+export async function copyForAi(pageId: number, block: { position: number }, box: Rect, onNote: (note: string) => void) {
+  const url = pageCropUrl(pageId, box, false);
+  const where = aiTabOpened() ? "pređi na Gemini tab (Ctrl+Tab), Ctrl+V" : "u Gemini-ju Ctrl+V";
+  try {
+    // Promise<Blob> čuva dozvolu klika (ili tastera) dok se isečak preuzima (Safari i Chrome)
+    const png = fetch(url).then((response) => response.blob());
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+    onNote(`Isečak je kopiran: ${where}, pa uputstvo (ponovo G ili „Uputstvo za AI“) i još jednom Ctrl+V`);
+  } catch {
+    // pregledač bez slike u clipboard-u: isečak se preuzima kao fajl
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `isecak-blok-${block.position}.png`;
+    link.click();
+    onNote("Isečak je preuzet kao fajl (pregledač ne dozvoljava sliku u clipboard-u)");
+  }
+  // Gemini prekida vezu sa tabom koji ga otvori (Cross-Origin-Opener-Policy), pa ga aplikacija ne može
+  // pronaći ni prebaciti u prvi plan: otvara se samo prvi put u sesiji, dalje ga korisnik bira sam
+  if (!aiTabOpened()) openAiApp();
+}
+
+/** Uputstvo za AI aplikaciju (stari natpis, prevod, isti stil) u clipboard. */
+export async function copyAiPrompt(blockId: number, onNote: (note: string) => void) {
+  try {
+    const { prompt } = await getAiPrompt(blockId);
+    await navigator.clipboard.writeText(prompt);
+    onNote("Uputstvo je kopirano: nalepi ga u AI aplikaciju (Ctrl+V), a sliku koju vrati kopiraj i nalepi ovde (Ctrl+V)");
+  } catch (error) {
+    onNote(`Uputstvo nije kopirano: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 interface Props {
   page: Page;
   cropSource: TextBlock | undefined; // izabran blok: zakrpa i isečak idu na njegovo mesto
@@ -34,42 +71,10 @@ interface Props {
 
 /** Alatke režima Zakrpe: slika preko stranice, isečak za doradu i ručni AI tok (Gemini). */
 export default function PatchTools({ page, cropSource, cropBox, selectedPatch, onAdd, onChange, onRemove, onNote }: Props) {
-  const copyAiPrompt = async () => {
-    if (!cropSource) return;
-    try {
-      const { prompt } = await getAiPrompt(cropSource.id);
-      await navigator.clipboard.writeText(prompt);
-      onNote("Uputstvo je kopirano: nalepi ga u AI aplikaciju (Ctrl+V), a sliku koju vrati kopiraj i nalepi ovde (Ctrl+V)");
-    } catch (error) {
-      onNote(`Uputstvo nije kopirano: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  };
   // ručni AI tok bez fajlova: isečak originala ide u clipboard (Ctrl+V u AI aplikaciji), a slika koju
   // aplikacija vrati se lepi u editor (Ctrl+V) i postaje zakrpa na izabranom bloku
-  const prepareForAi = async () => {
-    if (!cropSource) return;
-    const url = pageCropUrl(page.id, cropBox, false);
-    try {
-      // Promise<Blob> čuva dozvolu klika dok se isečak preuzima (Safari i Chrome)
-      const png = fetch(url).then((response) => response.blob());
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
-      onNote(
-        aiTabOpened()
-          ? "Isečak je kopiran: pređi na Gemini tab (Ctrl+Tab), Ctrl+V, pa „Uputstvo za AI“ i još jednom Ctrl+V"
-          : "Isečak je kopiran: u Gemini-ju Ctrl+V, pa „Uputstvo za AI“ i još jednom Ctrl+V",
-      );
-    } catch {
-      // pregledač bez slike u clipboard-u: isečak se preuzima kao fajl
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `isecak-blok-${cropSource.position}.png`;
-      link.click();
-      onNote("Isečak je preuzet kao fajl (pregledač ne dozvoljava sliku u clipboard-u)");
-    }
-    // Gemini prekida vezu sa tabom koji ga otvori (Cross-Origin-Opener-Policy), pa ga aplikacija ne može
-    // pronaći ni prebaciti u prvi plan: otvara se samo prvi put u sesiji, dalje ga korisnik bira sam
-    if (!aiTabOpened()) openAiApp();
-  };
+  const prepareForAi = () =>
+    cropSource && copyForAi(page.id, cropSource, cropBox, onNote);
 
   return (
     <div className="mode-tools">
@@ -121,7 +126,7 @@ export default function PatchTools({ page, cropSource, cropBox, selectedPatch, o
           aria-label="Kopiraj uputstvo za AI"
           disabled={!cropSource.translation}
           title={cropSource.translation ? "Uputstvo za AI aplikaciju (pretplata): zameni natpis prevodom istim slovima" : "Blok nema prevod"}
-          onClick={copyAiPrompt}
+          onClick={() => cropSource && copyAiPrompt(cropSource.id, onNote)}
         >
           <Copy size={16} aria-hidden /> Uputstvo za AI
         </button>

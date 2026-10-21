@@ -127,10 +127,10 @@ export function lineRuns(
   });
 }
 
-export function letterBlocks(blocks: TextBlock[], pageHeight: number, fonts: PageFonts): Lettering[] {
+export function letterBlocks(blocks: TextBlock[], pageHeight: number, fonts: PageFonts, covered?: ReadonlySet<number | null>): Lettering[] {
   const pitch = pagePitch(blocks, pageHeight);
   return blocks
-    .filter(isLettered)
+    .filter((block) => isLettered(block) && !covered?.has(block.id))
     .map((block) => {
       const style = blockStyle(block);
       if (block.kind === "title" && block.title?.glyphs.length) return titleLettering(block, style);

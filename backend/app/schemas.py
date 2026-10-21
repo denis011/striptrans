@@ -158,6 +158,8 @@ class ProjectProgress(BaseModel):
     blocks: int = 0  # blokovi sa tekstom
     translation: dict[str, int] = {}  # none | draft | edited | approved
     pending: list[dict] = []  # neodobreni blokovi redom: {page: pozicija, block: id, status}
+    # naslovi, natpisi i zvukovi bez zakrpe: {page, page_id, block, box: [x, y, w, h], translated}
+    ai_pending: list[dict] = []
     proofread: int = 0  # lektorisane stranice
     cleaned: int = 0  # očišćene stranice
     exported_at: datetime | None = None  # poslednji uspešan izvoz albuma
@@ -282,6 +284,7 @@ class PatchOut(BaseModel):
     rotation: float
     opacity: float
     above_text: bool
+    block_id: int | None = None
     path: str = Field(default="", exclude=True)
     mask_path: str | None = Field(default=None, exclude=True)
 

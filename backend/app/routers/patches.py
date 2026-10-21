@@ -62,6 +62,8 @@ async def add_patch(
         patch = patches.add(
             session, Path(settings.data_dir), page, data, box, match_page, above_text
         )
+        if block_id is not None:
+            patches.cover(patch, block)
     except patches.PatchRejected as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     session.commit()

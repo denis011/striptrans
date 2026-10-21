@@ -7,7 +7,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.deps import SessionDep, SettingsDep
-from app.models import Export, Job, Page, Project, Series, TextBlock
+from app.models import Export, Job, Page, Patch, Project, Series, TextBlock
 from app.paths import inside
 from app.schemas import (
     ActiveJobOut,
@@ -22,7 +22,7 @@ from app.schemas import (
     ProjectOut,
     ProjectPatch,
 )
-from app.services import exporting, script
+from app.services import ai_patch, exporting, script
 from app.services.importer import ImportFailed
 from app.services.page_import import queue_import
 
@@ -84,6 +84,23 @@ def _progress(session: Session, project: Project, data_dir: str) -> dict:
         {"page": position[page_id], "block": block_id, "status": status}
         for page_id, _, block_id, status in rows
     ]
+    # naslovi, natpisi i zvukovi bez svoje zakrpe: „sledeći za AI" (G) u editoru
+    covered = select(Patch.id).where(Patch.block_id == TextBlock.id).exists()
+    ai_rows = session.scalars(
+        select(TextBlock).where(
+            TextBlock.page_id.in_(ids), TextBlock.kind.in_(ai_patch.AI_KINDS), ~covered
+        )
+    ).all()
+    ai_pending = [
+        {
+            "page": position[block.page_id],
+            "page_id": block.page_id,
+            "block": block.id,
+            "box": [block.x, block.y, block.width, block.height],
+            "translated": bool(block.translation.strip()),
+        }
+        for block in sorted(ai_rows, key=lambda block: (position[block.page_id], block.position))
+    ]
     with_blocks = session.scalar(
         select(func.count(func.distinct(TextBlock.page_id))).where(TextBlock.page_id.in_(ids))
     )
@@ -139,6 +156,7 @@ def _progress(session: Session, project: Project, data_dir: str) -> dict:
         "blocks": sum(counts.values()),
         "translation": counts,
         "pending": pending,
+        "ai_pending": ai_pending,
         "proofread": sum(1 for page in active if page.translation_reviewed),
         "cleaned": sum(1 for page in active if page.cleaned_at),
         "exported_at": exported,

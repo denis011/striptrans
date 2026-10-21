@@ -20,6 +20,11 @@ MASK_THRESHOLD = 0.3
 DILATE = 25  # spaja slova onomatopeje u jednu oblast
 MIN_AREA_SHARE = 0.005  # manje oblasti su uglavnom mrlje na crtežu
 MAX_KNOWN_OVERLAP = 0.3
+# krupna slova jednog zvuka su razmaknuta više od DILATE: oblasti bliže od ovog dela visine manje su
+# jedan zvuk (merenje na celom albumu u docs/benchmarks)
+MERGE_GAP = 0.75
+# samo u istom redu (preklop po visini): zvuk ispod zvuka (dva panela) ostaje odvojen
+SAME_LINE = 0.25
 
 log = logging.getLogger(__name__)
 
@@ -55,7 +60,38 @@ def mask_candidates(mask: np.ndarray, known: list[Box]) -> list[Box]:
             continue
         if all(overlap(box, other) < MAX_KNOWN_OVERLAP for other in known):
             candidates.append(box)
-    return candidates
+    # tek posle provera: spojen sa tekstom oblačića zvuk bi otpao kao već nađen (merenje: 5 od 26)
+    return _merge_near(candidates)
+
+
+def _gap(a: Box, b: Box) -> float:
+    """Razmak dva okvira (0 kad se dodiruju ili preklapaju)."""
+    dx = max(b[0] - (a[0] + a[2]), a[0] - (b[0] + b[2]), 0.0)
+    dy = max(b[1] - (a[1] + a[3]), a[1] - (b[1] + b[3]), 0.0)
+    return max(dx, dy)
+
+
+def _merge_near(boxes: list[Box]) -> list[Box]:
+    """Spoji okvire u istom redu bliže od MERGE_GAP visine manjeg, dok ima takvih parova."""
+    boxes = list(boxes)
+    merged = True
+    while merged:
+        merged = False
+        for i in range(len(boxes)):
+            for j in range(i + 1, len(boxes)):
+                a, b = boxes[i], boxes[j]
+                shorter = min(a[3], b[3])
+                same_line = min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1]) >= SAME_LINE * shorter
+                if same_line and _gap(a, b) <= MERGE_GAP * shorter:
+                    x0, y0 = min(a[0], b[0]), min(a[1], b[1])
+                    x1, y1 = max(a[0] + a[2], b[0] + b[2]), max(a[1] + a[3], b[1] + b[3])
+                    boxes[i] = (x0, y0, x1 - x0, y1 - y0)
+                    del boxes[j]
+                    merged = True
+                    break
+            if merged:
+                break
+    return boxes
 
 
 def sfx_candidates(image: Image.Image, known: list[Box], model_path: Path) -> list[Box]:
